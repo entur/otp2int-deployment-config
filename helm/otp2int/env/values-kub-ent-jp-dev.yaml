@@ -1,0 +1,40 @@
+replicas: 2
+
+horizontalPodAutoscaler:
+  enabled: true
+  maxReplicas: 4
+  minReplicas: 2
+  targetCPUUtilizationPercentage: 70
+
+rollingUpdate:
+  maxSurge: 50%
+  maxUnavailable: 1
+
+resources:
+  cpuLimit: "8"
+  memLimit: 22000Mi
+  cpuRequest: "2"
+  memRequest: 20000Mi
+  xmx: 18g
+  xms: 18g
+
+maxConcurrentRoutingRequests: 2
+
+
+environmentValues:
+  otp2intGcpBaseName: "gs://ror-otp-graphs-gcp2int-dev/"
+
+ingress:
+  otpApi:
+    domainName: .dev.entur.io
+  otpDebug:
+    domainName: .dev.entur.org
+
+configuration:
+  apiProcessingTimeout: "60s"
+  flexRouting: true
+  floatingBike: false
+  optimizeTransfers: true
+  parallelRouting: false
+  restApiConfigJsonParam: true
+  transferConstraints: true

@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    {{- include "graph.builder.labels" . | indent 4 }}
+  annotations:
+      {{- include "common.annotations" . | indent 4 }}
+  name: graph-builder-otp2int
+  namespace: {{ .Release.Namespace }}
+data:
+  otp-config.json: |+
+      {
+        "configVersion" : "{{ .Values.build.number }}",
+        "otpFeatures" : {
+            "GoogleCloudStorage" : true,
+            "FlexRouting": true
+        }
+      }
+  build-config.json: |+
+      {
+        "configVersion" : "{{ .Values.build.number }}",
+        "dataImportReport": true,
+        "subwayAccessTime": 0,
+        "embedRouterConfig": true,
+        "areaVisibility": true,
+        "platformEntriesLinking": true,
+        "staticParkAndRide": true,
+        "staticBikeParkAndRide": true,
+        "maxDataImportIssuesPerFile": 1000,
+        "maxTransferDuration": "30m",
+        "distanceBetweenElevationSamples": 25,
+        "multiThreadElevationCalculations": true,
+        "streetGraph": "gs://{{ .Values.environmentValues.otp2intGcpBaseName }}street/${otp.serialization.version.id}.obj",
+        "graph": "{{ .Values.environmentValues.otp2intGcpBaseName }}netex-otp2int/${otp.serialization.version.id}/graph-${otp.serialization.version.id}.obj",
+        "buildReportDir": "gs://{{ .Values.environmentValues.otp2intGcpBaseName }}/report",
+        "transitModelTimeZone": "Europe/Stockholm",
+        "osmCacheDataInMem": "true",
+        "gtfsDefaults" : {
+            "discardMinTransferTimes": true,
+            "maxInterlineDistance" : 200
+        },
+        "osm": [
+          {
+            "source": "https://download.geofabrik.de/europe/sweden-latest.osm.pbf",
+            "osmTagMapping": "default",
+            "timeZone": "Europe/Stockholm"
+          }
+        ],
+        "transitFeeds": [
+          {
+            "type": "netex",
+            "feedId": "SE",
+            "source": "gs://{{ .Values.cronjobGraphBuilder.mardukBucket }}/outbound/netex/rb_norway-aggregated-netex.zip",
+            "sharedFilePattern": "_stops.xml",
+            "groupFilePattern": "line_([0-9]*)_.*\\.xml",
+            "groupFilePattern": "(\\w{3})_.*\\.xml"
+          }
+        ]
+      }

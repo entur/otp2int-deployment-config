@@ -1,0 +1,53 @@
+env: jp-dev
+
+replicas: 1
+
+horizontalPodAutoscaler:
+  enabled: true
+  maxReplicas: 10
+  minReplicas: 1
+  targetCPUUtilizationPercentage: 70
+
+rollingUpdate:
+  maxSurge: 0
+  maxUnavailable: 1
+
+resources:
+  cpuLimit: "8"
+  memLimit: 22000Mi
+  cpuRequest: "2"
+  memRequest: 20000Mi
+  xmx: 18g
+  xms: 18g
+
+configMap:
+  logbackConfig: env/logback.xml
+
+environmentValues:
+  mardukGcpBaseName: "gs://ror-otp-graphs-gcp2int-dev/"
+
+image:
+  identifier: <+artifacts.primary.image>
+  imagePullPolicy: Always
+
+build:
+  number: <+artifacts.primary.tag>
+
+service:
+  externalPort: 8080
+  internalPort: 8080
+
+maxConcurrentRoutingRequests: 2
+
+cronjobGraphBuilder:
+  imagePullPolicy: Always
+  mardukBucket: "marduk-dev"
+  mardukInternalBucket: "ror-marduk-internal-otp2int-dev"
+  resources:
+    cpuLimit: 5000m
+    memLimit: 26000Mi
+    cpuRequest: 5000m
+    memRequest: 24000Mi
+    xmx: 20g
+    xms: 512m
+

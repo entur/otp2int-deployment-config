@@ -60,6 +60,7 @@ jobs:
     with:
       environment: ${{ inputs.environment }}
       chart: helm/otp2int
+      values: values-kub-ent-jb-dev.yaml
 
   deploy-dev:
     needs: [ helm-lint ]

@@ -24,7 +24,7 @@ configMap:
   logbackConfig: env/logback.xml
 
 environmentValues:
-  mardukGcpBaseName: "gs://ror-otp-graphs-gcp2int-dev/"
+  otp2intGcpBaseName: "gs://ror-otp-graphs-gcp2int-dev/"
 
 image:
   identifier: <+artifacts.primary.image>

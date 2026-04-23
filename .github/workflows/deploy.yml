@@ -46,8 +46,8 @@ jobs:
           run: echo "Approve DEV tf plan"
 
   tf-apply-dev:
-      if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
-      needs: [ tf-plan-dev ]
+      if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.tf-plan-dev.outputs.has_changes == 'true' }}
+      needs: [ tf-plan-dev, tf-approval-dev ]
       name: Terraform Apply DEV
       uses: entur/gha-terraform/.github/workflows/apply.yml@v2
       with:
@@ -60,10 +60,11 @@ jobs:
     with:
       environment: ${{ inputs.environment }}
       chart: helm/otp2int
-      values: values-kub-ent-jb-dev.yaml
+      values: values-kub-ent-jp-dev.yaml
 
   deploy-dev:
-    needs: [ helm-lint ]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
+    needs: [ helm-lint, tf-apply-dev ]
     uses: entur/gha-helm/.github/workflows/deploy.yml@v1
     with:
       environment: dev

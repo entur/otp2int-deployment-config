@@ -1,0 +1,75 @@
+name: Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+      image_tag:
+        description: Image tag to deploy
+        required: true
+        type: string
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tag exists in entur/OpenTripPlanner
+        run: |
+          gh api repos/entur/OpenTripPlanner/git/refs/tags/${{ inputs.image_tag }} \
+            --silent || (echo "::error::Tag '${{ inputs.image_tag }}' not found in entur/OpenTripPlanner" && exit 1)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  terraform-lint:
+    uses: entur/gha-terraform/.github/workflows/lint.yml@v2
+
+  tf-plan-dev:
+      needs: terraform-lint
+      name: Terraform Plan DEV
+      uses: entur/gha-terraform/.github/workflows/plan.yml@v2
+      with:
+        environment: dev
+  tf-approval-dev:
+      if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.tf-plan-dev.outputs.has_changes == 'true' }}
+      needs: [ tf-plan-dev ]
+      runs-on: ubuntu-latest
+      timeout-minutes: 10
+      environment: Approve
+      steps:
+        - name: Manual approval
+          shell: bash
+          run: echo "Approve DEV tf plan"
+
+  tf-apply-dev:
+      if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
+      needs: [ tf-plan-dev ]
+      name: Terraform Apply DEV
+      uses: entur/gha-terraform/.github/workflows/apply.yml@v2
+      with:
+        environment: dev
+        has_changes: ${{ needs.tf-plan-dev.outputs.has_changes }}
+
+  helm-lint:
+    needs: [ validate-tag ]
+    uses: entur/gha-helm/.github/workflows/lint.yml@v1
+    with:
+      environment: ${{ inputs.environment }}
+
+  deploy-dev:
+    needs: [ helm-lint ]
+    uses: entur/gha-helm/.github/workflows/deploy.yml@v1
+    with:
+      environment: dev
+      gcp_cluster_location: europe-west4
+      gcp_cluster_name: kub-ent-jp-dev-001
+      image: otp2:${{ inputs.image_tag }}
+      image_set_path: "image.identifier"
+      chart: helm/otp2int
+      namespace: otp2int
+      release_name: otp2int
+    secrets: inherit

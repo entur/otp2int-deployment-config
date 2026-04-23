@@ -1,11 +1,16 @@
 # Contains main description of bulk of terraform?
 terraform {
-  required_version = ">= 0.13.2"
+  required_version = "~> 1.14"
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> ~> 6.49.0"
+    }
+  }
 }
 
-provider "google" {
-  version = "~> 4.84.0"
-}
+provider "google" {}
+
 # Create bucket
 resource "google_storage_bucket" "storage_bucket" {
   name                        = "${var.bucket_instance_prefix}-${var.bucket_instance_suffix}"

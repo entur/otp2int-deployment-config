@@ -9,12 +9,12 @@ variable "location" {
 variable "labels" {
   description = "Labels used in all resources"
   type        = map(string)
-     default = {
-       manager = "terraform"
-       team    = "ror"
-       slack   = "talk-ror"
-       app     = "otp2int"
-     }
+  default = {
+    manager = "terraform"
+    team    = "ror"
+    slack   = "talk-ror"
+    app     = "otp2int"
+  }
 }
 
 variable "bucket_instance_suffix" {

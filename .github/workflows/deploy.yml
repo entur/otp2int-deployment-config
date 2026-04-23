@@ -59,6 +59,7 @@ jobs:
     uses: entur/gha-helm/.github/workflows/lint.yml@v1
     with:
       environment: ${{ inputs.environment }}
+      chart: helm/otp2int
 
   deploy-dev:
     needs: [ helm-lint ]

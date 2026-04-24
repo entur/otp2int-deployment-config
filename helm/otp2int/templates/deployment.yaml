@@ -77,6 +77,8 @@ spec:
           value: {{ .Values.environmentValues.otp2intGcpBaseName }}
         - name: GRAPH_POINTER_FILE
           value: current-otp2int
+        - name: GRAPH_POINTER_PREFIX
+          value: netex-otp2int
         lifecycle:
           preStop:
             exec:

@@ -22,7 +22,7 @@ maxConcurrentRoutingRequests: 2
 
 
 environmentValues:
-  otp2intGcpBaseName: "gs://ror-otp-graphs-gcp2int-dev/"
+  otp2intGcpBaseName: "gs://ror-otp2int-dev/"
 
 ingress:
   otpApi:

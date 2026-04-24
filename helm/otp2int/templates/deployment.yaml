@@ -68,7 +68,7 @@ spec:
         - --load
         - /code/otpdata/international
         - --maxThreads
-        - {{ .Values.maxConcurrentRoutingRequests }}
+        - "{{ .Values.maxConcurrentRoutingRequests }}"
         - --serve
         env:
         - name: TZ

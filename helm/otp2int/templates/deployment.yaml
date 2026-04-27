@@ -66,7 +66,7 @@ spec:
         - -jar
         - otp-shaded.jar
         - --load
-        - /code/otpdata/international
+        - /code/otpdata/norway
         - --maxThreads
         - "{{ .Values.maxConcurrentRoutingRequests }}"
         - --serve
@@ -136,10 +136,10 @@ spec:
         terminationMessagePolicy: File
         volumeMounts:
         - name: router-config-volume
-          mountPath: /code/otpdata/international/router-config.json
+          mountPath: /code/otpdata/norway/router-config.json
           subPath: router-config.json
         - name: feature-config-volume
-          mountPath: /code/otpdata/international/otp-config.json
+          mountPath: /code/otpdata/norway/otp-config.json
           subPath: otp-config.json
         - mountPath: /etc/otp2/logback.xml
           name: logback-config-volume

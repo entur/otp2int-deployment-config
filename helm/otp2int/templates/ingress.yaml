@@ -5,11 +5,11 @@ metadata:
     {{- include "common.labels" . | indent 4 }}
     traffic-type: api
   annotations:
+    kubernetes.io/ingress.class: traefik
     {{- include "common.annotations" . | indent 4 }}
   name: otp2int-journey-planner
   namespace: {{ .Release.Namespace }}
 spec:
-  ingressClassName: traefik
   rules:
   - host: otp2int{{ .Values.ingress.otpApi.domainName }}
     http:
@@ -27,10 +27,11 @@ metadata:
   labels:
     {{- include "common.labels" . | indent 4 }}
     traffic-type: public
+  annotations:
+    kubernetes.io/ingress.class: traefik
   name: otp2int-debug
   namespace: {{ .Release.Namespace }}
 spec:
-  ingressClassName: traefik
   rules:
     - host: otp2int-debug{{ .Values.ingress.otpDebug.domainName }}
       http:

@@ -141,6 +141,9 @@ spec:
         - name: feature-config-volume
           mountPath: /code/otpdata/norway/otp-config.json
           subPath: otp-config.json
+        - name: build-config-volume
+          mountPath: /code/otpdata/norway/build-config.json
+          subPath: build-config.json
         - mountPath: /etc/otp2/logback.xml
           name: logback-config-volume
           subPath: logback.xml
@@ -167,3 +170,7 @@ spec:
           defaultMode: 420
           name: otp2int-logback-config
         name: logback-config-volume
+      - configMap:
+          defaultMode: 420
+          name: otp2int-build-config
+        name: build-config-volume

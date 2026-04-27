@@ -30,10 +30,10 @@ data:
         "maxTransferDuration": "30m",
         "distanceBetweenElevationSamples": 25,
         "multiThreadElevationCalculations": true,
-        "streetGraph": "gs://{{ .Values.environmentValues.otp2intGcpBaseName }}street/${otp.serialization.version.id}.obj",
+        "streetGraph": "{{ .Values.environmentValues.otp2intGcpBaseName }}street/${otp.serialization.version.id}.obj",
         "graph": "{{ .Values.environmentValues.otp2intGcpBaseName }}netex-otp2int/${otp.serialization.version.id}/graph-${otp.serialization.version.id}.obj",
-        "buildReportDir": "gs://{{ .Values.environmentValues.otp2intGcpBaseName }}/report",
-        "transitModelTimeZone": "Europe/Stockholm",
+        "buildReportDir": "{{ .Values.environmentValues.otp2intGcpBaseName }}report",
+        "transitModelTimeZone": "Europe/Oslo",
         "osmCacheDataInMem": "true",
         "gtfsDefaults" : {
             "discardMinTransferTimes": true,
@@ -41,19 +41,20 @@ data:
         },
         "osm": [
           {
-            "source": "https://download.geofabrik.de/europe/sweden-latest.osm.pbf",
+            "source": "https://download.geofabrik.de/europe/norway-latest.osm.pbf",
             "osmTagMapping": "default",
-            "timeZone": "Europe/Stockholm"
+            "timeZone": "Europe/Oslo"
           }
         ],
         "transitFeeds": [
           {
             "type": "netex",
-            "feedId": "SE",
+            "feedId": "RB",
             "source": "gs://{{ .Values.cronjobGraphBuilder.mardukBucket }}/outbound/netex/rb_norway-aggregated-netex.zip",
             "sharedFilePattern": "_stops.xml",
-            "groupFilePattern": "line_([0-9]*)_.*\\.xml",
-            "groupFilePattern": "(\\w{3})_.*\\.xml"
+            "sharedGroupFilePattern": "_(\\w{3})(_flexible)?_shared_data.xml",
+            "groupFilePattern": "(\\w{3})_.*\\.xml",
+            "ignoreFareFrame": false
           }
         ]
       }

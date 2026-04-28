@@ -29,6 +29,7 @@ jobs:
       uses: entur/gha-terraform/.github/workflows/plan.yml@v2
       with:
         environment: dev
+
   tf-approval-dev:
       if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.tf-plan-dev.outputs.has_changes == 'true' }}
       needs: [ tf-plan-dev ]
@@ -63,9 +64,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      repo_tag: ${{ steps.tag.outputs.repo_tag }}
     steps:
       - uses: actions/checkout@v6
       - name: Tag repo
+        id: tag
         run: |
           IMAGE_TAG=$(grep 'identifier' helm/otp2int/values.yaml | awk -F: '{print $NF}' | tr -d ' ')
           REPO_TAG="${{ github.ref_name }}-v${{ github.run_number }}-${GITHUB_SHA:0:8}-${IMAGE_TAG}"
@@ -74,6 +78,7 @@ jobs:
             -f ref="refs/tags/${REPO_TAG}" \
             -f sha="${{ github.sha }}" \
             || echo "::warning::Tag '${REPO_TAG}' already exists, skipping"
+          echo "repo_tag=${REPO_TAG}" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -92,3 +97,58 @@ jobs:
       namespace: otp2int
       release_name: otp2int
     secrets: inherit
+
+  post-deploy:
+    if: ${{ !cancelled() && needs.deploy-dev.result == 'success' }}
+    needs: [ deploy-dev, tag-repo ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - name: Authenticate to GCP
+        uses: entur/gha-meta/.github/actions/cloud-auth@v1
+        with:
+          environment: dev
+          cloud_provider: gcp
+          gcp_workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+          gcp_service_account: ${{ vars.SERVICE_ACCOUNT }}
+      - name: Authenticate to GKE
+        uses: entur/gha-meta/.github/actions/k8s-auth@v1
+        with:
+          environment: dev
+          cloud_provider: gcp
+          gcp_cluster_name: kub-ent-jp-dev-001
+          gcp_cluster_location: europe-west4
+      - name: Annotate deployment
+        run: |
+          DEPLOYED_TAG="${{ needs.tag-repo.outputs.repo_tag || inputs.tag }}"
+          IMAGE=$(grep 'identifier' helm/otp2int/values.yaml | awk '{print $2}')
+          kubectl annotate deployment/otp2int \
+            entur.io/environment="dev" \
+            entur.io/git-tag="${DEPLOYED_TAG}" \
+            entur.io/image="${IMAGE}" \
+            entur.io/deployed-at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            entur.io/deployed-by="${{ github.actor }}" \
+            --overwrite -n otp2int
+      - name: Deployment summary
+        run: |
+          DEPLOYED_TAG="${{ needs.tag-repo.outputs.repo_tag || inputs.tag }}"
+          IMAGE=$(grep 'identifier' helm/otp2int/values.yaml | awk '{print $2}')
+          DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## Deployment Summary
+
+          | | |
+          |---|---|
+          | **Status** | ✅ Success |
+          | **Environment** | dev |
+          | **Git tag** | \`${DEPLOYED_TAG}\` |
+          | **Image** | \`${IMAGE}\` |
+          | **Deployed at** | ${DEPLOYED_AT} |
+          | **Deployed by** | ${{ github.actor }} |
+          | **Workflow run** | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+          EOF

@@ -21,6 +21,8 @@ resources:
 maxConcurrentRoutingRequests: 2
 
 
+
+
 environmentValues:
   otp2intGcpBaseName: "gs://ror-otp2int-dev/"
 

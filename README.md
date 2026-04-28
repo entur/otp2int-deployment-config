@@ -41,3 +41,95 @@ A suspended CronJob used as a job template — triggered manually. Builds graphs
 - **Sweden** — NeTEx 
 - **Norway** — NeTEx 
 OSM data is pulled from Geofabrik for Sweden, Finland, and Denmark. No elevation data or real-time updates.
+
+## CI/CD Workflows
+
+### Normal Deploy (push to main / workflow_dispatch without tag)
+
+#### With Terraform changes
+
+```mermaid
+flowchart LR
+    TFL[terraform-lint]
+    HL[helm-lint]
+    TAG[tag-repo\nmain-vN-sha-imageTag]
+    TFP[tf-plan-dev]
+    TFA[tf-approval-dev\nmanual gate]
+    TFAP[tf-apply-dev]
+    DEP[deploy-dev]
+
+    TFL --> TAG
+    HL --> TAG
+    TAG --> TFP --> TFA --> TFAP --> DEP
+```
+
+#### Without Terraform changes
+
+```mermaid
+flowchart LR
+    TFL[terraform-lint]
+    HL[helm-lint]
+    TAG[tag-repo\nmain-vN-sha-imageTag]
+    TFP[tf-plan-dev\nno changes]
+    TFA[tf-approval-dev\nskipped]:::skipped
+    TFAP[tf-apply-dev\nskipped]:::skipped
+    DEP[deploy-dev]
+
+    TFL --> TAG
+    HL --> TAG
+    TAG --> TFP --> TFA --> TFAP
+    TFP --> DEP
+
+    classDef skipped fill:#e0e0e0,color:#999,stroke:#ccc
+```
+
+> `tf-approval-dev` and `tf-apply-dev` are skipped when `tf-plan` detects no changes. `deploy-dev` runs regardless since skipped ≠ failure.
+
+### Rollback (workflow_dispatch with tag input)
+
+#### With Terraform changes
+
+```mermaid
+flowchart LR
+    SKIP1[terraform-lint\nskipped]:::skipped
+    SKIP2[helm-lint\nskipped]:::skipped
+    SKIP3[tag-repo\nskipped]:::skipped
+    TFP[tf-plan-dev]
+    TFA[tf-approval-dev\nmanual gate]
+    TFAP[tf-apply-dev]
+    DEP[deploy-dev\nat specified tag]
+
+    SKIP1 & SKIP2 & SKIP3
+    TFP --> TFA --> TFAP --> DEP
+
+    classDef skipped fill:#e0e0e0,color:#999,stroke:#ccc
+```
+
+#### Without Terraform changes
+
+```mermaid
+flowchart LR
+    SKIP1[terraform-lint\nskipped]:::skipped
+    SKIP2[helm-lint\nskipped]:::skipped
+    SKIP3[tag-repo\nskipped]:::skipped
+    TFP[tf-plan-dev\nno changes]
+    TFA[tf-approval-dev\nskipped]:::skipped
+    TFAP[tf-apply-dev\nskipped]:::skipped
+    DEP[deploy-dev\nat specified tag]
+
+    SKIP1 & SKIP2 & SKIP3
+    TFP --> TFA --> TFAP
+    TFP --> DEP
+
+    classDef skipped fill:#e0e0e0,color:#999,stroke:#ccc
+```
+
+> `terraform-lint`, `helm-lint` and `tag-repo` are always skipped on rollback. Terraform plan/apply only runs if there are infra changes to roll back. Helm always deploys the config and image from the specified tag.
+
+### Deploying / Rolling Back
+
+| Action | How |
+|---|---|
+| Normal deploy | Push to `main` or trigger workflow without tag |
+| Roll back | Trigger workflow → enter tag e.g. `main-v19-ccde0368-v2.10.0-entur-32` |
+| Find available tags | `git tag -l` or GitHub → Code → Tags |

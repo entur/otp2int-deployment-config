@@ -27,7 +27,7 @@ environmentValues:
   otp2intGcpBaseName: "gs://ror-otp-graphs-gcp2int-dev/"
 
 image:
-  identifier: <+artifacts.primary.image>
+  identifier: eu.gcr.io/entur-system-1287/otp2:v2.10.0-entur-32
   imagePullPolicy: Always
 
 build:

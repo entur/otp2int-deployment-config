@@ -1,5 +1,8 @@
 name: Deploy
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       environment:
@@ -9,27 +12,19 @@ on:
         type: choice
         options:
           - dev
-      image_tag:
-        description: Image tag to deploy
-        required: true
+      tag:
+        description: Repo tag to deploy (e.g. main-v19-ccde0368-v2.10.0-entur-32). Leave empty to deploy HEAD.
+        required: false
         type: string
 
 jobs:
-  validate-tag:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check tag exists in entur/OpenTripPlanner
-        run: |
-          gh api repos/entur/OpenTripPlanner/git/refs/tags/${{ inputs.image_tag }} \
-            --silent || (echo "::error::Tag '${{ inputs.image_tag }}' not found in entur/OpenTripPlanner" && exit 1)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   terraform-lint:
+    if: ${{ !inputs.tag }}
     uses: entur/gha-terraform/.github/workflows/lint.yml@v2
 
   tf-plan-dev:
-      needs: terraform-lint
+      if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
+      needs: tag-repo
       name: Terraform Plan DEV
       uses: entur/gha-terraform/.github/workflows/plan.yml@v2
       with:
@@ -55,23 +50,43 @@ jobs:
         has_changes: ${{ needs.tf-plan-dev.outputs.has_changes }}
 
   helm-lint:
-    needs: [ validate-tag ]
+    if: ${{ !inputs.tag }}
     uses: entur/gha-helm/.github/workflows/lint.yml@v1
     with:
-      environment: ${{ inputs.environment }}
+      environment: ${{ inputs.environment || 'dev' }}
       chart: helm/otp2int
       values: values-kub-ent-jp-dev.yaml
 
+  tag-repo:
+    if: ${{ inputs.tag == '' || inputs.tag == null }}
+    needs: [ helm-lint, terraform-lint ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Tag repo
+        run: |
+          IMAGE_TAG=$(grep 'identifier' helm/otp2int/values.yaml | awk -F: '{print $NF}' | tr -d ' ')
+          REPO_TAG="${{ github.ref_name }}-v${{ github.run_number }}-${GITHUB_SHA:0:8}-${IMAGE_TAG}"
+          gh api repos/${{ github.repository }}/git/refs \
+            --method POST \
+            -f ref="refs/tags/${REPO_TAG}" \
+            -f sha="${{ github.sha }}" \
+            || echo "::warning::Tag '${REPO_TAG}' already exists, skipping"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   deploy-dev:
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
-    needs: [ helm-lint, tf-apply-dev ]
+    needs: tf-apply-dev
     uses: entur/gha-helm/.github/workflows/deploy.yml@v1
     with:
       environment: dev
       gcp_cluster_location: europe-west4
       gcp_cluster_name: kub-ent-jp-dev-001
-      image: otp2:${{ inputs.image_tag }}
-      image_set_path: "image.identifier"
+      image: na
+      git_ref: ${{ inputs.tag }}
       values: values-kub-ent-jp-dev.yaml
       chart: helm/otp2int
       namespace: otp2int

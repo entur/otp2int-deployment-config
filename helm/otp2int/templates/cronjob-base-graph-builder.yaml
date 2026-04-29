@@ -116,6 +116,7 @@ spec:
               name: otp2int-logback-config
             name: logback-config-volume
       backoffLimit: 1
+      ttlSecondsAfterFinished: 86400 #24h
   # the cron job should never run as it is used only as a template for creating new jobs.
   schedule: 0 0 1 1 0
   successfulJobsHistoryLimit: 1

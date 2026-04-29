@@ -1,0 +1,43 @@
+name: Run Graph Builder Job
+
+on:
+  workflow_dispatch:
+    inputs:
+      cronjob:
+        description: CronJob template to create job from
+        required: true
+        type: choice
+        options:
+          - graph-builder-otp2int
+          - graph-builder-otp2int-base
+
+jobs:
+  run-graph-builder:
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Authenticate to GCP
+        uses: entur/gha-meta/.github/actions/cloud-auth@v1
+        with:
+          environment: dev
+          cloud_provider: gcp
+          gcp_workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+          gcp_service_account: ${{ vars.SERVICE_ACCOUNT }}
+      - name: Authenticate to GKE
+        uses: entur/gha-meta/.github/actions/k8s-auth@v1
+        with:
+          environment: dev
+          cloud_provider: gcp
+          gcp_cluster_name: kub-ent-jp-dev-001
+          gcp_cluster_location: europe-west4
+      - name: Create job from CronJob template
+        run: |
+          JOB_NAME="${{ inputs.cronjob }}-gha-${{ github.run_number }}"
+          kubectl create job "${JOB_NAME}" \
+            --from=cronjob/${{ inputs.cronjob }} \
+            -n otp2int
+          echo "Created job: ${JOB_NAME}" >> $GITHUB_STEP_SUMMARY

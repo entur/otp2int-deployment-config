@@ -30,6 +30,7 @@ data:
         "maxTransferDuration": "30m",
         "distanceBetweenElevationSamples": 25,
         "multiThreadElevationCalculations": true,
+        "elevationTileCacheSizeMB": 1024,
         "streetGraph": "{{ .Values.environmentValues.otp2intGcpBaseName }}street/${otp.serialization.version.id}.obj",
         "graph": "{{ .Values.environmentValues.otp2intGcpBaseName }}netex-otp2int/${otp.serialization.version.id}/graph-${otp.serialization.version.id}.obj",
         "buildReportDir": "{{ .Values.environmentValues.otp2intGcpBaseName }}report",
@@ -45,6 +46,9 @@ data:
             "osmTagMapping": "default",
             "timeZone": "Europe/Oslo"
           }
+        ],
+        "dem" : [
+          {"source": "gs://{{ .Values.cronjobGraphBuilder.mardukInternalBucket }}/kartverket/heightData/norge_dem_10m_33_2026_05_01.tif"}
         ],
         "transitFeeds": [
           {

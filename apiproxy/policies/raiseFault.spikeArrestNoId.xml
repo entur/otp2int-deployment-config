@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<RaiseFault async="false" continueOnError="false" enabled="true" name="raiseFault.spikeArrestNoId">
+  <DisplayName>raiseFault.spikeArrestNoId</DisplayName>
+  <FaultRules/>
+  <Properties/>
+  <FaultResponse>
+    <Set>
+      <Headers/>
+      <Payload contentType="text/plain"/>
+      <StatusCode>429</StatusCode>
+      <ReasonPhrase>Spike arrest violation. Exceeded allowed rate whitout "header.Et-Client-Name" defined. Please identify yourself with "header.Et-Client-Name"</ReasonPhrase>
+    </Set>
+  </FaultResponse>
+  <IgnoreUnresolvedVariables>true</IgnoreUnresolvedVariables>
+</RaiseFault>

@@ -40,7 +40,13 @@ Serves the OTP2 GraphQL/REST API. Loads graphs from GCS on startup by watching t
 A suspended CronJob used as a job template — triggered manually. Builds graphs from:
 - **Sweden** — NeTEx 
 - **Norway** — NeTEx 
-OSM data is pulled from Geofabrik for Sweden, Finland, and Denmark. No elevation data or real-time updates.
+OSM data is pulled from Geofabrik for Norway and Sweden. No elevation data or real-time updates.
+
+#### Adding new sources
+1. Update `helm/otp2int/templates/configmap-graph-builder.yaml`
+   1. `transitFeeds`, see the other sources for examples
+   2. `osm`, see the other sources for examples
+2. Ensure otp2int pipeline has access to the new sources
 
 ## CI/CD Workflows
 
@@ -133,3 +139,4 @@ flowchart LR
 | Normal deploy | Push to `main` or trigger workflow without tag |
 | Roll back | Trigger workflow → enter tag e.g. `main-v19-ccde0368-v2.10.0-entur-32` |
 | Find available tags | `git tag -l` or GitHub → Code → Tags |
+

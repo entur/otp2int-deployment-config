@@ -45,6 +45,11 @@ data:
             "source": "https://download.geofabrik.de/europe/norway-latest.osm.pbf",
             "osmTagMapping": "default",
             "timeZone": "Europe/Oslo"
+          },
+          {
+            "source": "https://download.geofabrik.de/europe/sweden-latest.osm.pbf",
+            "osmTagMapping": "default",
+            "timeZone": "Europe/Stockholm"
           }
         ],
         "dem" : [

@@ -59,6 +59,15 @@ data:
             "sharedGroupFilePattern": "_(\\w{3})(_flexible)?_shared_data.xml",
             "groupFilePattern": "(\\w{3})_.*\\.xml",
             "ignoreFareFrame": false
+          },
+          {
+            "type": "netex",
+            "feedId": "SAMTRAFIKEN",
+            "source": "gs://{{ $.Values.cronjobGraphBuilder.swedenBucket }}/sweden_aggregated_latest.zip",
+            "sharedFilePattern": "_stops.xml",
+            "sharedGroupFilePattern": "(\\w+_)_shared_data.xml",
+            "groupFilePattern": "(\\w+)_.*\\.xml",
+            "ignoreFareFrame": false
           }
         ]
       }

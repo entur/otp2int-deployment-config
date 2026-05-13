@@ -11,6 +11,16 @@ terraform {
 
 provider "google" {}
 
+resource "google_storage_bucket_iam_member" "report_entur_reader" {
+  bucket = google_storage_bucket.storage_bucket.name
+  role   = "roles/storage.objectViewer"
+  member = "domain:entur.org"
+  condition {
+    title      = "report_prefix_only"
+    expression = "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.storage_bucket.name}/objects/report/')"
+  }
+}
+
 # Create bucket
 resource "google_storage_bucket" "storage_bucket" {
   name                        = "${var.bucket_instance_prefix}-${var.bucket_instance_suffix}"

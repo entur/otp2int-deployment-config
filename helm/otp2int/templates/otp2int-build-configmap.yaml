@@ -2,7 +2,8 @@ apiVersion: v1
 data:
   build-config.json: |+
    {
-      "graph": "${GRAPH_URI}"
+      "graph": "${GRAPH_URI}",
+      "buildReportDir": "{{ .Values.environmentValues.otp2intGcpBaseName }}report"
    }
 kind: ConfigMap
 metadata:

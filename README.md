@@ -91,6 +91,15 @@ flowchart LR
 
 > `tf-approval-dev` and `tf-apply-dev` are skipped when `tf-plan` detects no changes. `deploy-dev` runs regardless since skipped ≠ failure.
 
+### Manually deploy from branch
+The graph builder uses what ever is *currently* deployed, so to deploy from a branch you need to first deploy the branch, then do the graph build.
+Main is automatically deployed when merged to the `main` branch, but remember to deploy from main after you are done testing on a branch if you dont merge straight away.
+
+1. Manually run deploy on branch
+2. Manually run graph-build on branch
+3. Do your testing/verification
+4. Manually run deploy on main or merge branch to main
+
 ### Rollback (workflow_dispatch with tag input)
 
 #### With Terraform changes

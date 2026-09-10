@@ -99,7 +99,7 @@ data:
           "maxFlexTripDuration" : "1h15m"
         },
         "transmodelApi": {
-          "hideFeedId" : true
+          "hideFeedId" : false
         },
         "timetableUpdates": {
           "purgeExpiredData": true

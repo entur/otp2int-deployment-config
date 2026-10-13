@@ -13,13 +13,19 @@ import logging
 import os
 import sys
 import zipfile
+from datetime import datetime, timezone
 
 
 class CloudLoggingFormatter(logging.Formatter):
     """Format records as JSON so Google Cloud Logging picks up the severity."""
 
     def format(self, record: logging.LogRecord) -> str:
-        entry = {"severity": record.levelname, "message": record.getMessage()}
+        timestamp = datetime.fromtimestamp(record.created, tz=timezone.utc)
+        entry = {
+            "timestamp": timestamp.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "severity": record.levelname,
+            "message": record.getMessage(),
+        }
         if record.exc_info:
             entry["message"] += "\n" + self.formatException(record.exc_info)
         return json.dumps(entry)

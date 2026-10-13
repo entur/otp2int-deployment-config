@@ -10,6 +10,12 @@ on:
         options:
           - graph-builder-otp2int
           - graph-builder-otp2int-base
+  workflow_call:
+    inputs:
+      cronjob:
+        description: CronJob template to create job from
+        required: true
+        type: string
 
 jobs:
   run-graph-builder:

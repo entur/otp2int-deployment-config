@@ -24,7 +24,7 @@ spec:
           serviceAccountName: application
           initContainers:
             - name: merge-feeds
-              image: google/cloud-sdk:slim
+              image: google/cloud-sdk:588.0.0-slim
               imagePullPolicy: IfNotPresent
               command: [ "/bin/bash", "-c" ]
               args:

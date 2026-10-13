@@ -8,9 +8,29 @@ without the .zip extension, so the inputs do not collide, e.g.:
 
 Usage: merge_netex.py <output-zip> <input-zip> [<input-zip> ...]
 """
+import json
+import logging
 import os
 import sys
 import zipfile
+
+
+class CloudLoggingFormatter(logging.Formatter):
+    """Format records as JSON so Google Cloud Logging picks up the severity."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry = {"severity": record.levelname, "message": record.getMessage()}
+        if record.exc_info:
+            entry["message"] += "\n" + self.formatException(record.exc_info)
+        return json.dumps(entry)
+
+
+log = logging.getLogger("merge_netex")
+
+
+def fail(message: str) -> None:
+    log.error(message)
+    sys.exit(1)
 
 
 def dataset_name(path: str) -> str:
@@ -28,25 +48,29 @@ def merge(output: str, inputs: list[str]) -> None:
             with zipfile.ZipFile(src) as zin:
                 for info in zin.infolist():
                     if info.is_dir():
+                        log.warning(f"Skipping directory {info.filename} in {src}")
                         continue
                     name = info.filename
                     if os.path.basename(name) == "_stops.xml":
                         name = os.path.join(os.path.dirname(name), stops_name)
                         renamed = True
                     if name in seen:
-                        sys.exit(f"Duplicate entry {name} found when merging {src}")
+                        fail(f"Duplicate entry {name} found when merging {src}")
                     seen.add(name)
                     with zin.open(info) as fin, out.open(name, "w", force_zip64=True) as fout:
                         while chunk := fin.read(1 << 20):
                             fout.write(chunk)
             if not renamed:
-                sys.exit(f"No _stops.xml found in {src}")
-            print(f"Added {src} (_stops.xml -> {stops_name})")
+                fail(f"No _stops.xml found in {src}")
+            log.info(f"Added {src} (_stops.xml -> {stops_name})")
     os.replace(tmp, output)
-    print(f"Wrote {output} with {len(seen)} entries")
+    log.info(f"Wrote {output} with {len(seen)} entries")
 
 
 if __name__ == "__main__":
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(CloudLoggingFormatter())
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
     if len(sys.argv) < 3:
         sys.exit(__doc__)
     merge(sys.argv[1], sys.argv[2:])

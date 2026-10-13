@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    {{- include "graph.builder.labels" . | indent 4 }}
+  annotations:
+      {{- include "common.annotations" . | indent 4 }}
+  name: graph-builder-otp2int-merge-netex
+  namespace: {{ .Release.Namespace }}
+data:
+  merge_netex.py: |-
+{{ .Files.Get "files/merge_netex.py" | indent 4 }}

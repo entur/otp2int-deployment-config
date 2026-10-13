@@ -22,6 +22,48 @@ spec:
             {{- include "graph.builder.labels" . | indent 12 }}
         spec:
           serviceAccountName: application
+          initContainers:
+            - name: merge-feeds
+              image: google/cloud-sdk:588.0.0-slim
+              imagePullPolicy: IfNotPresent
+              command: [ "/bin/bash", "-c" ]
+              args:
+                - |
+                  set -euo pipefail
+                  WORK=/netex-data/work
+                  mkdir -p "$WORK"
+                  echo "Downloading NeTEx datasets"
+                  gcloud storage cp "gs://{{ .Values.cronjobGraphBuilder.mardukBucket }}/outbound/netex/rb_norway-aggregated-netex.zip" "$WORK/norway.zip"
+                  gcloud storage cp "gs://{{ .Values.cronjobGraphBuilder.swedenBucket }}/sweden_aggregated_latest.zip" "$WORK/sweden.zip"
+                  echo "Merging datasets into int.zip"
+                  python3 /scripts/merge_netex.py /netex-data/int.zip "$WORK/norway.zip" "$WORK/sweden.zip"
+                  rm -rf "$WORK"
+                  ls -l /netex-data
+              env:
+                - name: CLOUDSDK_CONFIG
+                  value: /tmp/gcloud
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+                requests:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                capabilities:
+                  drop: [ "ALL" ]
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - mountPath: /netex-data
+                  name: netex-data
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /scripts
+                  name: merge-netex-script
+                  readOnly: true
           containers:
           - command:
               - "java"
@@ -96,6 +138,9 @@ spec:
             - mountPath: /etc/otp2/logback.xml
               name: logback-config-volume
               subPath: logback.xml
+            - mountPath: /netex-data
+              name: netex-data
+              readOnly: true
           dnsPolicy: ClusterFirst
           restartPolicy: Never
           schedulerName: default-scheduler
@@ -115,6 +160,14 @@ spec:
               defaultMode: 420
               name: otp2int-logback-config
             name: logback-config-volume
+          - name: netex-data
+            emptyDir: {}
+          - name: tmp
+            emptyDir: {}
+          - configMap:
+              defaultMode: 420
+              name: graph-builder-otp2int-merge-netex
+            name: merge-netex-script
       backoffLimit: 1
       ttlSecondsAfterFinished: 86400 #24h
   # the cron job should never run as it is used only as a template for creating new jobs.

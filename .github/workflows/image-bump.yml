@@ -1,0 +1,80 @@
+name: Image bump
+
+# Polls the otp2 image on Google Container Registry every 30 minutes for the
+# newest release tag (v<major>.<minor>.<patch>-entur-<n>, pushed by
+# entur/OpenTripPlanner's docker-build workflow) and, if it differs from the
+# pin in helm/otp2int/values.yaml, commits the bump straight to main. That
+# push (path helm/**) is what starts deploy.yml's deploy-dev.
+#
+# The registry also carries non-release tags (e.g. test-oracle-graal-vm-25)
+# interleaved by push time, so the newest tag is filtered to the release
+# pattern rather than just taking the most recent timestamp.
+#
+# Pushes with the default GITHUB_TOKEN deliberately do not trigger other
+# workflows (GitHub's loop-prevention), which would silently stop deploy.yml from
+# firing. OTP2INT_GITFLOW_PAT is a PAT from a bot/machine GitHub account
+# with `contents: write` on this repo - a push authenticated with it is a
+# normal actor push and triggers deploy.yml as expected. Store it as a repo
+# secret named OTP2INT_GITFLOW_PAT (Settings -> Secrets and variables ->
+# Actions).
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: image-bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.OTP2INT_GITFLOW_PAT }}
+
+      - name: Authenticate to GCP
+        uses: entur/gha-meta/.github/actions/cloud-auth@v1
+        with:
+          environment: dev
+          cloud_provider: gcp
+          gcp_workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+          gcp_service_account: ${{ vars.SERVICE_ACCOUNT }}
+
+      - name: Find newest otp2 release tag on GCR
+        id: latest
+        run: |
+          TAG=$(gcloud container images list-tags eu.gcr.io/entur-system-1287/otp2 \
+            --sort-by=~timestamp --format=json \
+            | jq -r '[.[] | .tags[]? | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+-entur-[0-9]+$"))][0] // empty')
+          if [ -z "$TAG" ]; then
+            echo "::error::could not resolve an otp2 release tag from GCR"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Compare with pinned image
+        id: compare
+        run: |
+          CURRENT=$(grep -oP '(?<=identifier: eu\.gcr\.io/entur-system-1287/otp2:)\S+' helm/otp2int/values.yaml)
+          if [ "$CURRENT" = "${{ steps.latest.outputs.tag }}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump image pin and push
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          sed -i "s#identifier: eu\.gcr\.io/entur-system-1287/otp2:.*#identifier: eu.gcr.io/entur-system-1287/otp2:${{ steps.latest.outputs.tag }}#" helm/otp2int/values.yaml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add helm/otp2int/values.yaml
+          git commit -m "bump otp2 image to ${{ steps.latest.outputs.tag }}"
+          git push origin HEAD:main

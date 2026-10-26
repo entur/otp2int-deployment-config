@@ -76,6 +76,7 @@ OSM data is pulled from Geofabrik for Norway and Sweden. No elevation data or re
 | `codeql.yml` | PR, push to `main`, weekly | CodeQL security scan |
 | `terraform-drift-detection.yml` | Weekly, manual | Plan dev and open an issue on drift |
 | `run-graph-builder.yml` | Manual | Create a graph builder job |
+| `image-bump.yml` | Every 30 minutes, manual | Commit the newest otp2 release image tag to `main`, which starts `deploy.yml` |
 
 ### Normal Deploy (push to main / workflow_dispatch without tag)
 

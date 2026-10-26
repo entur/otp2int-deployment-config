@@ -1,0 +1,15 @@
+name: Scheduled Base Graph Build
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  base-graph-build:
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/run-graph-builder.yml
+    with:
+      cronjob: graph-builder-otp2int-base
+    secrets: inherit

@@ -1,0 +1,24 @@
+# CodeQL Security Analysis Workflow
+#
+# Runs GitHub's CodeQL static analysis to detect security vulnerabilities and
+# coding errors in the source code.
+#
+# Triggers:
+#   - push to main: Scan after merge to catch anything missed in PR review
+#   - pull_request: Scan on PRs to give feedback before merge
+#   - schedule (weekly): Catch newly discovered vulnerability patterns in existing code
+
+name: CodeQL Analysis
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  code-scan:
+    uses: entur/gha-security/.github/workflows/code-scan.yml@v2
+    secrets: inherit

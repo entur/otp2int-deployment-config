@@ -1,0 +1,73 @@
+# Terraform Infrastructure Workflow -- plan on PR, apply on merge
+#
+# Manages infrastructure changes for the dev environment.
+#
+# 1. Pull Request (terraform/** changes):
+#    Lint -> Plan dev.
+#    The developer sees the plan output on the PR. Nothing is applied.
+#
+# 2. Push to main (terraform/** changes) and workflow_dispatch:
+#    Lint -> Plan dev -> Apply dev.
+#
+# Concurrency:
+#   - Plan jobs use cancel-in-progress: true (only latest plan matters)
+#   - Apply jobs use cancel-in-progress: false (never cancel an in-progress apply)
+
+name: Terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+  workflow_dispatch:
+
+jobs:
+  # --- Lint ---
+  terraform-lint:
+    uses: entur/gha-terraform/.github/workflows/lint.yml@v2
+    permissions:
+      contents: read
+    concurrency:
+      group: terraform-lint-${{ github.ref }}
+      cancel-in-progress: true
+
+  # ============================================================================
+  # PLAN
+  # ============================================================================
+
+  tf-plan-dev:
+    needs: [terraform-lint]
+    uses: entur/gha-terraform/.github/workflows/plan.yml@v2
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    concurrency:
+      group: terraform-plan-dev-${{ github.ref }}
+      cancel-in-progress: true
+    with:
+      environment: dev
+
+  # ============================================================================
+  # APPLY -- dev (push to main and dispatch, automatic)
+  # ============================================================================
+
+  tf-apply-dev:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [tf-plan-dev]
+    uses: entur/gha-terraform/.github/workflows/apply.yml@v2
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    concurrency:
+      group: terraform-apply-dev
+      cancel-in-progress: false
+    with:
+      environment: dev
+      has_changes: ${{ needs.tf-plan-dev.outputs.has_changes }}

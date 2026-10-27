@@ -50,46 +50,45 @@ OSM data is pulled from Geofabrik for Norway and Sweden. No elevation data or re
 
 ## CI/CD Workflows
 
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `deploy.yml` | Push to `main` (except `terraform/**` and `*.md`), manual | Helm lint, tag repo, deploy to dev |
+| `terraform.yml` | PR and push with `terraform/**` changes, manual | Terraform lint, plan and apply |
+| `build.yml` | PR | Helm lint |
+| `pr.yml` | PR | Verify PR title and body |
+| `codeql.yml` | PR, push to `main`, weekly | CodeQL security scan |
+| `terraform-drift-detection.yml` | Weekly, manual | Plan dev and open an issue on drift |
+| `run-graph-builder.yml` | Manual | Create a graph builder job |
+
 ### Normal Deploy (push to main / workflow_dispatch without tag)
 
-#### With Terraform changes
+```mermaid
+flowchart LR
+    HL[helm-lint]
+    TAG[tag-repo\nmain-vN-sha-imageTag]
+    DEP[deploy-dev]
+    POST[post-deploy]
+
+    HL --> TAG --> DEP --> POST
+```
+
+### Terraform changes
+
+Terraform runs in `terraform.yml`, separate from the Helm deploy.
 
 ```mermaid
 flowchart LR
     TFL[terraform-lint]
-    HL[helm-lint]
-    TAG[tag-repo\nmain-vN-sha-imageTag]
     TFP[tf-plan-dev]
-    TFA[tf-approval-dev\nmanual gate]
     TFAP[tf-apply-dev]
-    DEP[deploy-dev]
 
-    TFL --> TAG
-    HL --> TAG
-    TAG --> TFP --> TFA --> TFAP --> DEP
+    TFL --> TFP --> TFAP
 ```
 
-#### Without Terraform changes
+> On a PR with `terraform/**` changes, only lint and plan run, and the plan shows on the PR. After merge to `main`, dev is applied automatically. `tf-apply-dev` is skipped when `tf-plan-dev` detects no changes.
 
-```mermaid
-flowchart LR
-    TFL[terraform-lint]
-    HL[helm-lint]
-    TAG[tag-repo\nmain-vN-sha-imageTag]
-    TFP[tf-plan-dev\nno changes]
-    TFA[tf-approval-dev\nskipped]:::skipped
-    TFAP[tf-apply-dev\nskipped]:::skipped
-    DEP[deploy-dev]
-
-    TFL --> TAG
-    HL --> TAG
-    TAG --> TFP --> TFA --> TFAP
-    TFP --> DEP
-
-    classDef skipped fill:#e0e0e0,color:#999,stroke:#ccc
-```
-
-> `tf-approval-dev` and `tf-apply-dev` are skipped when `tf-plan` detects no changes. `deploy-dev` runs regardless since skipped ≠ failure.
+> [!IMPORTANT]
+> `deploy.yml` does not wait for `terraform.yml`. If a Helm change needs new infrastructure, merge the Terraform change in its own PR first. Merge the Helm change after `tf-apply-dev` is done.
 
 ### Manually deploy from branch
 The graph builder uses what ever is *currently* deployed, so to deploy from a branch you need to first deploy the branch, then do the graph build.
@@ -102,44 +101,20 @@ Main is automatically deployed when merged to the `main` branch, but remember to
 
 ### Rollback (workflow_dispatch with tag input)
 
-#### With Terraform changes
-
 ```mermaid
 flowchart LR
-    SKIP1[terraform-lint\nskipped]:::skipped
-    SKIP2[helm-lint\nskipped]:::skipped
-    SKIP3[tag-repo\nskipped]:::skipped
-    TFP[tf-plan-dev]
-    TFA[tf-approval-dev\nmanual gate]
-    TFAP[tf-apply-dev]
+    SKIP1[helm-lint\nskipped]:::skipped
+    SKIP2[tag-repo\nskipped]:::skipped
     DEP[deploy-dev\nat specified tag]
+    POST[post-deploy]
 
-    SKIP1 & SKIP2 & SKIP3
-    TFP --> TFA --> TFAP --> DEP
+    SKIP1 & SKIP2
+    DEP --> POST
 
     classDef skipped fill:#e0e0e0,color:#999,stroke:#ccc
 ```
 
-#### Without Terraform changes
-
-```mermaid
-flowchart LR
-    SKIP1[terraform-lint\nskipped]:::skipped
-    SKIP2[helm-lint\nskipped]:::skipped
-    SKIP3[tag-repo\nskipped]:::skipped
-    TFP[tf-plan-dev\nno changes]
-    TFA[tf-approval-dev\nskipped]:::skipped
-    TFAP[tf-apply-dev\nskipped]:::skipped
-    DEP[deploy-dev\nat specified tag]
-
-    SKIP1 & SKIP2 & SKIP3
-    TFP --> TFA --> TFAP
-    TFP --> DEP
-
-    classDef skipped fill:#e0e0e0,color:#999,stroke:#ccc
-```
-
-> `terraform-lint`, `helm-lint` and `tag-repo` are always skipped on rollback. Terraform plan/apply only runs if there are infra changes to roll back. Helm always deploys the config and image from the specified tag.
+> `helm-lint` and `tag-repo` are always skipped on rollback. Helm deploys the config and image from the specified tag. Rollback does not change infrastructure. To roll back Terraform, run `terraform.yml` manually and select the tag as the ref.
 
 ### Deploying / Rolling Back
 
@@ -149,3 +124,11 @@ flowchart LR
 | Roll back | Trigger workflow → enter tag e.g. `main-v19-ccde0368-v2.10.0-entur-32` |
 | Find available tags | `git tag -l` or GitHub → Code → Tags |
 
+## Deviations from the Golden Path
+
+This repository differs from the [Entur Golden Path](https://github.com/entur/ai/blob/main/skills/setup-cicd-workflows/SKILL.md) for CI/CD. The table gives the reason for each difference.
+
+| Deviation | Golden Path | Reason |
+|---|---|---|
+| `deploy.yml` tags the repository and supports rollback with a tag. | The image tag from the PR build is used for promotion. | No image is built here, so the repository tag identifies the deployed config and image. |
+| `terraform.yml` applies dev after merge, not on the PR. | Apply dev on the PR. Apply tst and prd after merge. | Dev is the only environment. Changes are applied only after review and merge. Use the Golden Path flow when tst and prd exist. |

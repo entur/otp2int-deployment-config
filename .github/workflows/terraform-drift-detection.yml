@@ -1,0 +1,75 @@
+# Terraform Drift Detection -- weekly scheduled check
+#
+# Runs Terraform plan for all environments on a schedule to detect if real
+# infrastructure has diverged from Terraform state. If drift is found, a
+# GitHub issue is created.
+
+name: Terraform Drift Detection
+
+on:
+  schedule:
+    - cron: '0 10 * * 4'       # Thursdays at 10:00 UTC
+  workflow_dispatch:
+
+jobs:
+  # --- Plan all environments ---
+  # Per-job permissions are required: plan.yml@v2 needs contents:read,
+  # id-token:write, pull-requests:write.
+  tf-plan-dev:
+    uses: entur/gha-terraform/.github/workflows/plan.yml@v2
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    with:
+      environment: dev
+
+  # --- Drift check ---
+  drift-check:
+    needs: [tf-plan-dev]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      has_drift: ${{ steps.check.outputs.has_drift }}
+      drifted_envs: ${{ steps.check.outputs.drifted_envs }}
+      issue_url: ${{ steps.check.outputs.issue_url }}
+    steps:
+      - name: Check for infrastructure drift
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEV_CHANGES: ${{ needs.tf-plan-dev.outputs.has_changes }}
+        run: |
+          DRIFTED_ENVS=""
+          if [ "$DEV_CHANGES" = "true" ]; then DRIFTED_ENVS="$DRIFTED_ENVS dev"; fi
+
+          if [ -n "$DRIFTED_ENVS" ]; then
+            echo "has_drift=true" >> "$GITHUB_OUTPUT"
+            echo "drifted_envs=$DRIFTED_ENVS" >> "$GITHUB_OUTPUT"
+            echo "Drift detected in:$DRIFTED_ENVS"
+            ISSUE_URL=$(gh issue create \
+              --title "Terraform drift detected in:$DRIFTED_ENVS" \
+              --body "$(cat <<BODY
+          ## Terraform Drift Detected
+
+          The weekly scheduled Terraform plan found infrastructure drift in the following environments: **$DRIFTED_ENVS**
+
+          ### Action Required
+
+          Review the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details and apply changes or update Terraform configuration to match actual infrastructure.
+
+          ### Details
+
+          | Environment | Drift Detected |
+          |-------------|---------------|
+          | dev | $DEV_CHANGES |
+          BODY
+          )" \
+              --repo "${{ github.repository }}")
+            echo "issue_url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_drift=false" >> "$GITHUB_OUTPUT"
+            echo "No drift detected in any environment"
+          fi

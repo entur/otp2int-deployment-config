@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   helm-lint:
-    uses: entur/gha-helm/.github/workflows/lint.yml@v1
+    uses: entur/gha-helm/.github/workflows/lint.yml@bd1e0a9b022ee0fafe43723b7c80c0eb48171593 # v1.7.0
     with:
       environment: dev
       chart: helm/otp2int

@@ -21,14 +21,17 @@ on:
         type: string
 
 jobs:
-  build:
+  helm-lint:
     if: ${{ !inputs.tag }}
-    uses: ./.github/workflows/build.yml
-    secrets: inherit
+    uses: entur/gha-helm/.github/workflows/lint.yml@v1
+    with:
+      environment: dev
+      chart: helm/otp2int
+      values: values-kub-ent-jp-dev.yaml
 
   tag-repo:
     if: ${{ inputs.tag == '' || inputs.tag == null }}
-    needs: [ build ]
+    needs: [ helm-lint ]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

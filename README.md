@@ -54,7 +54,7 @@ OSM data is pulled from Geofabrik for Norway and Sweden. No elevation data or re
 |---|---|---|
 | `deploy.yml` | Push to `main` (except `terraform/**` and `*.md`), manual | Helm lint, tag repo, deploy to dev |
 | `terraform.yml` | PR and push with `terraform/**` changes, manual | Terraform lint, plan and apply |
-| `build.yml` | PR | Helm lint |
+| `build.yml` | PR | Run CI |
 | `pr.yml` | PR | Verify PR title and body |
 | `codeql.yml` | PR, push to `main`, weekly | CodeQL security scan |
 | `terraform-drift-detection.yml` | Weekly, manual | Plan dev and open an issue on drift |
@@ -114,7 +114,7 @@ flowchart LR
     classDef skipped fill:#e0e0e0,color:#999,stroke:#ccc
 ```
 
-> `helm-lint` and `tag-repo` are always skipped on rollback. Helm deploys the config and image from the specified tag. Rollback does not change infrastructure. To roll back Terraform, run `terraform.yml` manually and select the tag as the ref.
+> `build` and `tag-repo` are always skipped on rollback. Helm deploys the config and image from the specified tag. Rollback does not change infrastructure. To roll back Terraform, run `terraform.yml` manually and select the tag as the ref.
 
 ### Deploying / Rolling Back
 
@@ -128,7 +128,11 @@ flowchart LR
 
 This repository differs from the [Entur Golden Path](https://github.com/entur/ai/blob/main/skills/setup-cicd-workflows/SKILL.md) for CI/CD. The table gives the reason for each difference.
 
-| Deviation | Golden Path | Reason |
-|---|---|---|
-| `deploy.yml` tags the repository and supports rollback with a tag. | The image tag from the PR build is used for promotion. | No image is built here, so the repository tag identifies the deployed config and image. |
-| `terraform.yml` applies dev after merge, not on the PR. | Apply dev on the PR. Apply tst and prd after merge. | Dev is the only environment. Changes are applied only after review and merge. Use the Golden Path flow when tst and prd exist. |
+| Deviation                                                          | Golden Path                                                             | Reason                                                                                                                        |
+|--------------------------------------------------------------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| `deploy.yml` tags the repository and supports rollback with a tag. | The image tag from the PR build is used for promotion.                  | Covers both conventional ci/cd.yml. No image is built here, so the repository tag identifies the deployed config and image.   |
+| `terraform.yml` applies dev after merge, not on the PR.            | Apply dev on the PR. Apply tst and prd after merge.                     | Dev is the only environment. Changes are applied only after review and merge. Use the Golden Path flow when tst and prd exist. |
+| `deploy.yml` only lints the Helm chart.                            | `deploy.yml` lints, tests, and builds, scans and pushes a Docker image. | No application code or Dockerfile exists here.                                                                                |
+| No `dependabot-pr.yml`.                                            | Run CI for Dependabot PRs after approval.                               | CI uses no secrets, so `build.yml` already runs on Dependabot PRs.                                                            |
+| No `docker` ecosystem in `dependabot.yml`.                         | Update Docker base images weekly.                                       | No Dockerfile exists here. The image is set in `helm/otp2int/values.yaml`.                                                    |
+

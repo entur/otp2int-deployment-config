@@ -21,18 +21,15 @@ on:
         type: string
 
 jobs:
-  helm-lint:
+  build:
     if: ${{ !inputs.tag }}
-    uses: entur/gha-helm/.github/workflows/lint.yml@v1
-    with:
-      environment: ${{ inputs.environment || 'dev' }}
-      chart: helm/otp2int
-      values: values-kub-ent-jp-dev.yaml
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
 
   tag-repo:
     if: ${{ inputs.tag == '' || inputs.tag == null }}
-    needs: [ helm-lint ]
-    runs-on: ubuntu-latest
+    needs: [ build ]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     outputs:
@@ -72,7 +69,7 @@ jobs:
   post-deploy:
     if: ${{ !cancelled() && needs.deploy-dev.result == 'success' }}
     needs: [ deploy-dev, tag-repo ]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: dev
     permissions:
       contents: read

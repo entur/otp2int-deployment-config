@@ -25,7 +25,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Authenticate to GCP
         uses: entur/gha-meta/.github/actions/cloud-auth@v1
         with:

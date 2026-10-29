@@ -23,7 +23,7 @@ on:
 jobs:
   helm-lint:
     if: ${{ !inputs.tag }}
-    uses: entur/gha-helm/.github/workflows/lint.yml@v1
+    uses: entur/gha-helm/.github/workflows/lint.yml@v2
     with:
       environment: ${{ inputs.environment || 'dev' }}
       chart: helm/otp2int

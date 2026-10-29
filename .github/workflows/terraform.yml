@@ -29,7 +29,7 @@ on:
 jobs:
   # --- Lint ---
   terraform-lint:
-    uses: entur/gha-terraform/.github/workflows/lint.yml@v2
+    uses: entur/gha-terraform/.github/workflows/lint.yml@v3
     permissions:
       contents: read
     concurrency:

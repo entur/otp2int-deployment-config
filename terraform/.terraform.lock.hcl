@@ -2,24 +2,24 @@
 # Manual edits may be lost in future updates.
 
 provider "registry.terraform.io/hashicorp/google" {
-  version     = "6.49.3"
-  constraints = "~> 6.49.0"
+  version     = "8.9.0"
+  constraints = "~> 8.9.0"
   hashes = [
-    "h1:B0aAYvquRi10pbhds8EsrBUW/sy29ebAZ4f/4cyRfS8=",
-    "h1:QkNVeJC7lrQa1pZuCrLBgq7hESIP5IdO1XVOVN0s7T4=",
-    "h1:cU8PRPAD6+W3mCWROYqECv+JwmpDiXFDM8VDQmrsyC0=",
-    "h1:kOOq1McNjfbrTzNoKKT2sZEwNuzAZuAs6dJJ5O9lEfU=",
-    "zh:0ecb3cda6763b671f74dc5a5f1a60a2a2134181bf8869bcafd2608912d0d2940",
-    "zh:1d1b322559f2929baff32ef66c89ba82b7d7808956e05d00235a1efbc8cd5c86",
-    "zh:4561e0b401f1760c954e8a59f0da4e8f9ee07b45bd4144ec5524716373f6f01f",
-    "zh:4e5d9c426e9fcda222de1992e46039db107d0c9a55868196625971151c2b6854",
-    "zh:5686b66bc949d17a9d7babc53961667e6b86fd246ea803b48199f1db92a20062",
-    "zh:5b67ee17674acaaf51f73f3300807fd9aea6a6f1496ee55b61714d8a05f8d871",
-    "zh:650d36bb2a8039125fc0eacc68b57a42542afd11b7dc59690c51ec4e268d7057",
-    "zh:72e34e9e0e13aaa6b854031a176ac8bf56929eb6ff065222e91293e0a2c992cc",
-    "zh:af1a0b3a1e82f0af80676f43144178898eb146f75900a5d9a2640138ff387687",
-    "zh:dc9de3199a0f4f976298b160441ffca16f699f42948fbdc2a1a76bf8bd5dd7f7",
-    "zh:ec55d7c38f1f683a76f74cec80397d3b33d33ac3467e13cafe788c7278b44538",
+    "h1:1REt6EKYmjtrLK5PC/AHGZ2FFaHs0EMsvLOyv2eADeA=",
+    "h1:EcUkiM2dD/TtxkpcH/2BtPFp8oHIiU4x6R/Dn43sS3Y=",
+    "h1:FUXg/Ji+hkPz36iKaLZ4no0b/Y/opRQDJJNPL79v6Zs=",
+    "h1:pSO6rd3Sz9d4O3RhYj6ZZxdi6Q+wBjkOF6CkyLoC64E=",
+    "zh:204c800cca7419c69aa219c5584029432e2add15a7159101fb259028d5db5684",
+    "zh:22cbb6c7ba3d3a91bbd63db158d65a594d1dab04d53fb37fffb3de9e28fccbc8",
+    "zh:3fe9bc4bcd8d6cdb277ad074ca71fd76d408b007aed915137807062e6b78bc59",
+    "zh:46cd3c139d1d24607f0310e01353f1c40cce69d30328b0339768dad428a81d5a",
+    "zh:5aa53cec75d0e2fc494b3a8ee53f74fece6bc2652bdb9b75e1bdc62a2a43b6f7",
+    "zh:8650863d8148062f6e22df62c331927e134ae9f83af556d265b17bcbd7b1ab51",
+    "zh:9ee9965d085f86263842f281257efc8394998c937c4c49eda649a61f26544813",
+    "zh:cc80028bd30af6182f29f0148e9469a9a49254c0f378caeb3d9fba050543c11a",
+    "zh:e2adf06a292d50dc58f52d2ba059f2361f1642dad3054ea839ab2e4763cceb8d",
+    "zh:f0afcbd33aaea01f6a62e7ced7ad5b31c86d5a7016da1965db1fcb2d7b926556",
     "zh:f569b65999264a9416862bca5cd2a6177d94ccb0424f3a4ef424428912b9cb3c",
+    "zh:feeaffe1edb8ac1f3c0f431f11d21ef31c6b797762d8428e3c18a67ac641cf49",
   ]
 }

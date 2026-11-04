@@ -23,7 +23,7 @@ on:
 jobs:
   helm-lint:
     if: ${{ !inputs.tag }}
-    uses: entur/gha-helm/.github/workflows/lint.yml@v1
+    uses: entur/gha-helm/.github/workflows/lint.yml@bd1e0a9b022ee0fafe43723b7c80c0eb48171593 # v1.7.0
     with:
       environment: ${{ inputs.environment || 'dev' }}
       chart: helm/otp2int
@@ -38,7 +38,7 @@ jobs:
     outputs:
       repo_tag: ${{ steps.tag.outputs.repo_tag }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Tag repo
         id: tag
         run: |
@@ -56,7 +56,7 @@ jobs:
   deploy-dev:
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     needs: tag-repo
-    uses: entur/gha-helm/.github/workflows/deploy.yml@v1
+    uses: entur/gha-helm/.github/workflows/deploy.yml@bd1e0a9b022ee0fafe43723b7c80c0eb48171593 # v1.7.0
     with:
       environment: dev
       gcp_cluster_location: europe-west4
@@ -78,18 +78,18 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ inputs.tag || github.sha }}
       - name: Authenticate to GCP
-        uses: entur/gha-meta/.github/actions/cloud-auth@v1
+        uses: entur/gha-meta/.github/actions/cloud-auth@c3ca051ef943942321084a21ec919bc8097dfd92 # v1.9.1
         with:
           environment: dev
           cloud_provider: gcp
           gcp_workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
           gcp_service_account: ${{ vars.SERVICE_ACCOUNT }}
       - name: Authenticate to GKE
-        uses: entur/gha-meta/.github/actions/k8s-auth@v1
+        uses: entur/gha-meta/.github/actions/k8s-auth@c3ca051ef943942321084a21ec919bc8097dfd92 # v1.9.1
         with:
           environment: dev
           cloud_provider: gcp

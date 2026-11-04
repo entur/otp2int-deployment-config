@@ -25,16 +25,16 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Authenticate to GCP
-        uses: entur/gha-meta/.github/actions/cloud-auth@v1
+        uses: entur/gha-meta/.github/actions/cloud-auth@c3ca051ef943942321084a21ec919bc8097dfd92 # v1.9.1
         with:
           environment: dev
           cloud_provider: gcp
           gcp_workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
           gcp_service_account: ${{ vars.SERVICE_ACCOUNT }}
       - name: Authenticate to GKE
-        uses: entur/gha-meta/.github/actions/k8s-auth@v1
+        uses: entur/gha-meta/.github/actions/k8s-auth@c3ca051ef943942321084a21ec919bc8097dfd92 # v1.9.1
         with:
           environment: dev
           cloud_provider: gcp

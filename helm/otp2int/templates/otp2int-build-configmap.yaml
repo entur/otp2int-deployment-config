@@ -2,7 +2,7 @@ apiVersion: v1
 data:
   build-config.json: |+
    {
-      "graph": "${GRAPH_URI}"
+      "graph": "{{ .Values.environmentValues.otp2intGcpBaseName }}netex-otp2int/${otp.serialization.version.id}/graph-${otp.serialization.version.id}.obj"
    }
 kind: ConfigMap
 metadata:

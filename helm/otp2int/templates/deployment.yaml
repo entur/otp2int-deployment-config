@@ -44,7 +44,6 @@ spec:
       - image: {{ .Values.image.identifier }}
         imagePullPolicy: {{ .Values.image.imagePullPolicy }}
         command:
-        - /docker-entrypoint.sh
         - java
         - -Dfile.encoding=UTF-8
         - -Xms{{ .Values.resources.xms }}

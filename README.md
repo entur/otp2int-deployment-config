@@ -34,7 +34,24 @@ helm/otp2int/
 ## Components
 
 ### Journey Planner
-Serves the OTP2 GraphQL/REST API. Loads graphs from GCS on startup by watching the `current-otp2int` pointer file in the graph bucket.
+Serves the OTP2 GraphQL/REST API.
+Loads the graph from GCS on startup.
+
+OTP fills in the serialization version id, for example `EN-0242`.
+The serialization version id changes only when the graph format changes.
+- **Same id:** a new graph build overwrites the existing graph file. A new OTP image with the same id also reads this file.
+- **New id:** the graph builder writes to a new directory. Graphs for older ids stay in their own directories.
+
+> [!IMPORTANT]
+> When you upgrade to an OTP image with a new serialization version id, no graph exists for that id yet.
+> The pods crash-loop until you build a graph with the new image.
+> Deploy the new image, then run the graph builder.
+
+#### Rolling back to a previous graph
+Each build overwrites the graph file for its serialization version id.
+To go back to an older graph with the same id, run the graph builder again with the older input data.
+
+A rollback to an image with an older serialization version id loads the graph that is still in that id's directory.
 
 ### Graph Builder
 A suspended CronJob used as a job template — triggered manually. Builds graphs from:

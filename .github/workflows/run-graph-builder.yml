@@ -27,14 +27,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Authenticate to GCP
-        uses: entur/gha-meta/.github/actions/cloud-auth@c3ca051ef943942321084a21ec919bc8097dfd92 # v1.9.1
+        uses: entur/gha-meta/.github/actions/cloud-auth@v1
         with:
           environment: dev
           cloud_provider: gcp
           gcp_workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
           gcp_service_account: ${{ vars.SERVICE_ACCOUNT }}
       - name: Authenticate to GKE
-        uses: entur/gha-meta/.github/actions/k8s-auth@c3ca051ef943942321084a21ec919bc8097dfd92 # v1.9.1
+        uses: entur/gha-meta/.github/actions/k8s-auth@v1
         with:
           environment: dev
           cloud_provider: gcp

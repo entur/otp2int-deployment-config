@@ -29,7 +29,7 @@ on:
 jobs:
   # --- Lint ---
   terraform-lint:
-    uses: entur/gha-terraform/.github/workflows/lint.yml@67c83c025c1810b54a77624ca6090a46dcac9c94 # v3.0.0
+    uses: entur/gha-terraform/.github/workflows/lint.yml@v3
     permissions:
       contents: read
     concurrency:
@@ -42,7 +42,7 @@ jobs:
 
   tf-plan-dev:
     needs: [terraform-lint]
-    uses: entur/gha-terraform/.github/workflows/plan.yml@67c83c025c1810b54a77624ca6090a46dcac9c94 # v3.0.0
+    uses: entur/gha-terraform/.github/workflows/plan.yml@v3
     permissions:
       contents: read
       id-token: write
@@ -60,7 +60,7 @@ jobs:
   tf-apply-dev:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: [tf-plan-dev]
-    uses: entur/gha-terraform/.github/workflows/apply.yml@67c83c025c1810b54a77624ca6090a46dcac9c94 # v3.0.0
+    uses: entur/gha-terraform/.github/workflows/apply.yml@v3
     permissions:
       contents: read
       id-token: write

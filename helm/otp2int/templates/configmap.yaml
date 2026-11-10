@@ -103,7 +103,18 @@ data:
         },
         "timetableUpdates": {
           "purgeExpiredData": true
-        }
+        },
+        "updaters": [
+          {
+            "type": "siri-et-updater",
+            "feedId": "INT",
+            "url": "http://anshar-int.dev.entur.internal/anshar/services?SIRI_VERSION=2.1",
+            "frequency": "20s",
+            "timeout": "30s",
+            "fuzzyTripMatching": false,
+            "headers": { "ET-Client-Name": "${HOSTNAME}-ET" }
+          }
+        ]
       }
 kind: ConfigMap
 metadata:

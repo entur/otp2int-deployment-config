@@ -41,9 +41,40 @@ jobs:
           gcp_cluster_name: kub-ent-jp-dev-001
           gcp_cluster_location: europe-west4
       - name: Create job from CronJob template
+        id: create-job
         run: |
           JOB_NAME="${{ inputs.cronjob }}-gha-${{ github.run_number }}"
           kubectl create job "${JOB_NAME}" \
             --from=cronjob/${{ inputs.cronjob }} \
             -n otp2int
+          echo "job_name=${JOB_NAME}" >> "$GITHUB_OUTPUT"
           echo "Created job: ${JOB_NAME}" >> $GITHUB_STEP_SUMMARY
+      - name: Wait for job to finish
+        env:
+          JOB_NAME: ${{ steps.create-job.outputs.job_name }}
+        run: |
+          set -euo pipefail
+          while true; do
+            succeeded_count=$(kubectl get job "${JOB_NAME}" -n otp2int -o jsonpath='{.status.succeeded}')
+            failed_condition=$(kubectl get job "${JOB_NAME}" -n otp2int \
+              -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}')
+            if [ "${succeeded_count:-0}" -ge 1 ]; then
+              echo "Job ${JOB_NAME} succeeded" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if [ "${failed_condition}" = "True" ]; then
+              echo "::error::Job ${JOB_NAME} failed. Pods are not restarted."
+              kubectl logs "job/${JOB_NAME}" -n otp2int --tail=100 || true
+              exit 1
+            fi
+            echo "Job ${JOB_NAME} is still running"
+            sleep 60
+          done
+
+      # Only the street+transit graph is served by the deployment. The base graph is input to the next build.
+      - name: Rolling restart of otp2int to load the new graph
+        if: ${{ inputs.cronjob == 'graph-builder-otp2int' }}
+        run: |
+          kubectl rollout restart deployment/otp2int -n otp2int
+          kubectl rollout status deployment/otp2int -n otp2int --timeout=30m
+          echo "Restarted deployment/otp2int" >> "$GITHUB_STEP_SUMMARY"

@@ -29,6 +29,7 @@ spec:
               - "-server"
               - "-Xms{{ .Values.cronjobGraphBuilder.resources.xms }}"
               - "-Xmx{{ .Values.cronjobGraphBuilder.resources.xmx }}"
+              - "-XX:-UseBASE64Intrinsics"
               - "-XX:MaxGCPauseMillis=5000"
               - "-XX:+UseTransparentHugePages"
               - "-XX:+AlwaysPreTouch"

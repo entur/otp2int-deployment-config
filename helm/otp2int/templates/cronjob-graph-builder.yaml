@@ -73,6 +73,7 @@ spec:
               - "-Xmx{{ .Values.cronjobGraphBuilder.resources.xmx }}"
               - "-XX:MaxGCPauseMillis=5000"
               - "-XX:+UseTransparentHugePages"
+              - "-XX:-UseBASE64Intrinsics"
               - "-XX:+AlwaysPreTouch"
               - "-XX:+UseCompactObjectHeaders"
               - "--add-opens=java.base/java.lang=ALL-UNNAMED"

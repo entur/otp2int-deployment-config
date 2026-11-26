@@ -19,6 +19,19 @@ on:
         description: Repo tag to deploy (e.g. main-v19-ccde0368-v2.10.0-entur-32). Leave empty to deploy HEAD.
         required: false
         type: string
+      skip_graph_check:
+        description: >-
+          Deploy a new serving image without a graph built with that image.
+          Use this only for a rollback to an older image, when graphs for its OTP version already exist.
+        required: false
+        default: false
+        type: boolean
+
+# Run one deploy at a time. A queued deploy then compares with the images that the deploy before it deployed.
+# A newer queued deploy replaces an older queued deploy.
+concurrency:
+  group: deploy-otp2int-dev
+  cancel-in-progress: false
 
 jobs:
   helm-lint:
@@ -42,7 +55,7 @@ jobs:
       - name: Tag repo
         id: tag
         run: |
-          IMAGE_TAG=$(grep 'identifier' helm/otp2int/values.yaml | awk -F: '{print $NF}' | tr -d ' ')
+          IMAGE_TAG=$(grep '^  identifier:' helm/otp2int/values.yaml | awk -F: '{print $NF}' | tr -d ' ')
           REPO_TAG="${{ github.ref_name }}-v${{ github.run_number }}-${GITHUB_SHA:0:8}-${IMAGE_TAG}"
           gh api repos/${{ github.repository }}/git/refs \
             --method POST \
@@ -53,9 +66,90 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # An OTP update uses two commits, see image.identifier in helm/otp2int/values.yaml.
+  # The serving pods only load graphs built with their own OTP version. With a new image and no graph,
+  # the pods crash loop and Helm rolls back. Thus this job stops the deploy when the serving image changes
+  # before a transit graph build succeeded with that image.
+  check-images:
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      graph_builder_image_changed: ${{ steps.compare.outputs.graph_builder_image_changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - name: Authenticate to GCP
+        uses: entur/gha-meta/.github/actions/cloud-auth@v1
+        with:
+          environment: dev
+          cloud_provider: gcp
+          gcp_workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+          gcp_service_account: ${{ vars.SERVICE_ACCOUNT }}
+      - name: Authenticate to GKE
+        uses: entur/gha-meta/.github/actions/k8s-auth@v1
+        with:
+          environment: dev
+          cloud_provider: gcp
+          gcp_cluster_name: kub-ent-jp-dev-001
+          gcp_cluster_location: europe-west4
+      - name: Compare deployed images with new images
+        id: compare
+        env:
+          SKIP_GRAPH_CHECK: ${{ inputs.skip_graph_check || false }}
+        run: |
+          set -euo pipefail
+          new_serving_image=$(yq '.image.identifier' helm/otp2int/values.yaml)
+          new_graph_builder_image=$(yq '.cronjobGraphBuilder.image' helm/otp2int/values.yaml)
+          deployed_serving_image=$(kubectl get deployment/otp2int -n otp2int \
+            -o jsonpath='{.spec.template.spec.containers[0].image}')
+          deployed_graph_builder_image=$(kubectl get cronjob/graph-builder-otp2int -n otp2int \
+            -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[?(@.name=="graph-builder-otp2int")].image}')
+          # Set by run-graph-builder.yml after a successful transit graph build.
+          graph_built_with_image=$(kubectl get cronjob/graph-builder-otp2int -n otp2int \
+            -o jsonpath='{.metadata.annotations.entur\.io/graph-built-with-image}')
+
+          for image in "${new_serving_image}" "${new_graph_builder_image}" "${deployed_serving_image}" "${deployed_graph_builder_image}"; do
+            if [ -z "${image}" ] || [ "${image}" = "null" ]; then
+              echo "::error::Cannot read all images. Check image.identifier and cronjobGraphBuilder.image in values.yaml, and the deployed resources."
+              exit 1
+            fi
+          done
+
+          if [ "${new_graph_builder_image}" = "${deployed_graph_builder_image}" ]; then
+            graph_builder_image_changed=false
+          else
+            graph_builder_image_changed=true
+          fi
+          echo "graph_builder_image_changed=${graph_builder_image_changed}" >> "$GITHUB_OUTPUT"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          | | Deployed | New |
+          |---|---|---|
+          | **Serving image** | \`${deployed_serving_image}\` | \`${new_serving_image}\` |
+          | **Graph builder image** | \`${deployed_graph_builder_image}\` | \`${new_graph_builder_image}\` |
+
+          Graphs last built with: \`${graph_built_with_image:-unknown}\`
+          EOF
+
+          if [ "${new_serving_image}" = "${deployed_serving_image}" ]; then
+            exit 0
+          fi
+          if [ "${SKIP_GRAPH_CHECK}" = "true" ]; then
+            echo "::warning::The graph check is skipped. The serving pods get ${new_serving_image} without a check of the graphs."
+            exit 0
+          fi
+          if [ "${new_serving_image}" != "${graph_built_with_image}" ]; then
+            echo "::error::The serving image changes to ${new_serving_image}, but the graphs were last built with '${graph_built_with_image:-unknown}'. First deploy cronjobGraphBuilder.image=${new_serving_image} in a separate commit, and wait for the graph build to succeed."
+            exit 1
+          fi
+
   deploy-dev:
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
-    needs: tag-repo
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    needs: [ tag-repo, check-images ]
     uses: entur/gha-helm/.github/workflows/deploy.yml@v2
     with:
       environment: dev
@@ -98,7 +192,7 @@ jobs:
       - name: Annotate deployment
         run: |
           DEPLOYED_TAG="${{ needs.tag-repo.outputs.repo_tag || inputs.tag }}"
-          IMAGE=$(grep 'identifier' helm/otp2int/values.yaml | awk '{print $2}')
+          IMAGE=$(grep '^  identifier:' helm/otp2int/values.yaml | awk '{print $2}')
           kubectl annotate deployment/otp2int \
             entur.io/environment="dev" \
             entur.io/git-tag="${DEPLOYED_TAG}" \
@@ -109,7 +203,7 @@ jobs:
       - name: Deployment summary
         run: |
           DEPLOYED_TAG="${{ needs.tag-repo.outputs.repo_tag || inputs.tag }}"
-          IMAGE=$(grep 'identifier' helm/otp2int/values.yaml | awk '{print $2}')
+          IMAGE=$(grep '^  identifier:' helm/otp2int/values.yaml | awk '{print $2}')
           DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           cat >> $GITHUB_STEP_SUMMARY << EOF
           ## Deployment Summary
@@ -124,3 +218,29 @@ jobs:
           | **Deployed by** | ${{ github.actor }} |
           | **Workflow run** | [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
           EOF
+
+  # The graph builder CronJobs now have the new image. The serving pods keep their image until the next commit.
+  # The transit graph build loads the street graph for the OTP serialization version. Thus build the base graph first.
+  build-base-graph:
+    if: ${{ needs.check-images.outputs.graph_builder_image_changed == 'true' }}
+    needs: [ check-images, deploy-dev ]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/run-graph-builder.yml
+    with:
+      cronjob: graph-builder-otp2int-base
+      skip_deployment_restart: true
+    secrets: inherit
+
+  build-transit-graph:
+    if: ${{ needs.check-images.outputs.graph_builder_image_changed == 'true' }}
+    needs: [ check-images, build-base-graph ]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/run-graph-builder.yml
+    with:
+      cronjob: graph-builder-otp2int
+      skip_deployment_restart: true
+    secrets: inherit

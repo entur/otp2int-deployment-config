@@ -32,7 +32,15 @@ ingress:
   otpDebug:
     domainName: .dev.entur.org
 
+# Realtime-updaters use internal service instead of external (Apigee)
 configuration:
+  siriETUpdater: http://anshar-int.dev.entur.internal/anshar/services?SIRI_VERSION=2.1
+  siriETPubsubUpdater:
+    enabled: true
+    topicProjectName: ent-ansharint-dev
+    subscriptionProjectName: ent-otp2int-dev
+    pubsubTopicName: xml.estimated_timetables
+    dataInitializationUrl: http://anshar-int.dev.entur.internal/anshar/rest/et-monitored-cache
   apiProcessingTimeout: "60s"
   flexRouting: true
   floatingBike: false

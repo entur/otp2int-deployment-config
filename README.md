@@ -8,27 +8,28 @@ Helm deployment configuration for the **otp2int** (OpenTripPlanner International
 
 ## Structure
 
-```
+```text
 helm/otp2int/
 ├── Chart.yaml
-├── values.yaml                        # Default values
+├── values.yaml                          # Default values, including the two images
 ├── env/
 │   ├── logback.xml
-│   └── values-kub-ent-jp-dev.yaml     # Dev environment overrides
+│   └── values-kub-ent-jp-dev.yaml       # Dev environment overrides
+├── files/
+│   └── merge_netex.py                   # Merges the Norway and Sweden NeTEx datasets
 └── templates/
-    ├── deployment.yaml                # OTP2int journey planner
+    ├── deployment.yaml                  # OTP2int journey planner
     ├── service.yaml
     ├── ingress.yaml
-    ├── configmap.yaml                 # router-config.json
-    ├── otp2-feature-configmap.yaml    # otp-config.json feature flags
-    ├── logback-configmap.yaml
-    ├── secrets.yaml                   # ExternalSecrets (SLACK_URL, SAMTRAFIKEN_API_KEY)
-    ├── rbac.yaml
-    ├── horizontaloidautoscaler.yaml
-    ├── configmap-graph-builder.yaml   # Graph builder build/otp config
-    ├── cronjob-graph-builder.yaml     # Graph builder job template (suspend=true)
-    ├── logback-configmap-graph-builder.yaml
-    └── cronjob-redeploy-otp2.yaml     # Watches GCS pointer, rolls deployment
+    ├── horizontalpodautoscaler.yaml
+    ├── configmap.yaml                   # router-config.json
+    ├── otp2-feature-configmap.yaml      # otp-config.json feature flags
+    ├── otp2int-build-configmap.yaml     # build-config.json with the graph path
+    ├── logback-configmap.yaml           # Used by the journey planner and the graph builders
+    ├── configmap-graph-builder.yaml     # Graph builder build/otp config
+    ├── configmap-merge-netex.yaml       # merge_netex.py for the transit graph build
+    ├── cronjob-base-graph-builder.yaml  # Street graph job template (suspend=true)
+    └── cronjob-graph-builder.yaml       # Street+transit graph job template (suspend=true)
 ```
 
 ## Components
@@ -44,8 +45,29 @@ The serialization version id changes only when the graph format changes.
 
 > [!IMPORTANT]
 > When you upgrade to an OTP image with a new serialization version id, no graph exists for that id yet.
-> The pods crash-loop until you build a graph with the new image.
-> Deploy the new image, then run the graph builder.
+> The pods crash-loop, and Helm rolls back the deploy.
+> Thus build the graphs with the new image before the journey planner gets it.
+> See [Updating the OTP image](#updating-the-otp-image).
+
+#### Updating the OTP image
+The chart has two image values:
+- `cronjobGraphBuilder.image` is the image of the graph builder CronJobs.
+- `image.identifier` is the image of the journey planner pods.
+
+Update the image in two commits:
+1. Set `cronjobGraphBuilder.image` to the new image, and merge.
+   The deploy updates the CronJobs, and then builds the base graph and the transit graph with the new image.
+   The journey planner pods keep the old image.
+1. When the graph build succeeds, set `image.identifier` to the same image, and merge.
+   The journey planner pods get the new image and load the new graph.
+
+After a successful transit graph build, `run-graph-builder.yml` writes the image to the annotation `entur.io/graph-built-with-image` on the CronJob `graph-builder-otp2int`.
+The deploy stops with an error if `image.identifier` changes to an image that is not in this annotation.
+This prevents the crash loop if you merge the second commit too early, or put both changes in one commit.
+
+Until the second commit, the scheduled graph builds use the new image.
+If the serialization version id changed, the journey planner does not get fresh graphs in this period.
+Thus merge the second commit soon after the graph build succeeds.
 
 #### Rolling back to a previous graph
 Each build overwrites the graph file for its serialization version id.
@@ -54,10 +76,22 @@ To go back to an older graph with the same id, run the graph builder again with 
 A rollback to an image with an older serialization version id loads the graph that is still in that id's directory.
 
 ### Graph Builder
-A suspended CronJob used as a job template — triggered manually. Builds graphs from:
+Two suspended CronJobs are job templates.
+The workflows create jobs from them.
+- `graph-builder-otp2int-base` builds the street graph.
+- `graph-builder-otp2int` loads the street graph, adds the transit data and builds the graph that the journey planner loads.
+
+The graph is built dailty using scheduled workflows.
+After the scheduled transit graph build, the journey planner pods restart to load the new graph.
+The deploy also builds both graphs when `cronjobGraphBuilder.image` changes.
+Only one graph build runs at a time.
+
+The graphs are built from:
 - **Sweden** — NeTEx 
 - **Norway** — NeTEx 
-OSM data is pulled from Geofabrik for Norway and Sweden. No elevation data or real-time updates.
+OSM data is pulled from Geofabrik for Norway and Sweden.
+Elevation data comes from the Kartverket height data (`dem` in `configmap-graph-builder.yaml`).
+The graph builder uses no real-time updates.
 
 #### Adding new sources
 1. Update `helm/otp2int/templates/configmap-graph-builder.yaml`
@@ -69,13 +103,15 @@ OSM data is pulled from Geofabrik for Norway and Sweden. No elevation data or re
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `deploy.yml` | Push to `main` (except `terraform/**` and `*.md`), manual | Helm lint, tag repo, deploy to dev |
+| `deploy.yml` | Push to `main` (except `terraform/**` and `*.md`), manual | Helm lint, tag repo, check images, deploy to dev, build graphs when the graph builder image changed |
 | `terraform.yml` | PR and push with `terraform/**` changes, manual | Terraform lint, plan and apply |
 | `build.yml` | PR | Helm lint |
 | `pr.yml` | PR | Verify PR title and body |
 | `codeql.yml` | PR, push to `main`, weekly | CodeQL security scan |
 | `terraform-drift-detection.yml` | Weekly, manual | Plan dev and open an issue on drift |
-| `run-graph-builder.yml` | Manual | Create a graph builder job |
+| `run-graph-builder.yml` | Manual, called by `deploy.yml` and the scheduled builds | Create a graph builder job, wait for it, and restart the journey planner after a transit graph build |
+| `scheduled-base-graph-build.yml` | Daily at 00:00 UTC | Build the base (street) graph |
+| `scheduled-graph-build.yml` | Daily at 08:00 UTC | Build the transit graph and restart the journey planner |
 
 ### Normal Deploy (push to main / workflow_dispatch without tag)
 
@@ -83,11 +119,23 @@ OSM data is pulled from Geofabrik for Norway and Sweden. No elevation data or re
 flowchart LR
     HL[helm-lint]
     TAG[tag-repo\nmain-vN-sha-imageTag]
+    CHK[check-images]
     DEP[deploy-dev]
     POST[post-deploy]
+    BASE[build-base-graph]
+    TRANSIT[build-transit-graph]
 
-    HL --> TAG --> DEP --> POST
+    HL --> TAG --> DEP
+    CHK --> DEP --> POST
+    DEP -- graph builder image changed --> BASE --> TRANSIT
 ```
+
+- `check-images` stops the deploy if the journey planner image changes before graphs exist for it.
+  See [Updating the OTP image](#updating-the-otp-image).
+- `build-base-graph` and `build-transit-graph` run only when `cronjobGraphBuilder.image` changed.
+  They do not restart the journey planner.
+- Only one deploy runs at a time.
+  A newer queued deploy replaces an older queued deploy.
 
 ### Terraform changes
 
@@ -122,23 +170,29 @@ Main is automatically deployed when merged to the `main` branch, but remember to
 flowchart LR
     SKIP1[helm-lint\nskipped]:::skipped
     SKIP2[tag-repo\nskipped]:::skipped
+    CHK[check-images]
     DEP[deploy-dev\nat specified tag]
     POST[post-deploy]
 
     SKIP1 & SKIP2
-    DEP --> POST
+    CHK --> DEP --> POST
 
     classDef skipped fill:#e0e0e0,color:#999,stroke:#ccc
 ```
 
 > `helm-lint` and `tag-repo` are always skipped on rollback. Helm deploys the config and image from the specified tag. Rollback does not change infrastructure. To roll back Terraform, run `terraform.yml` manually and select the tag as the ref.
 
+A rollback to an older journey planner image stops at `check-images`, because the last graph build used the newer image.
+If graphs for the older serialization version id still exist, set `skip_graph_check` to `true` in the workflow input.
+If the tag also has an older `cronjobGraphBuilder.image`, the deploy then builds the graphs again with the older image.
+
 ### Deploying / Rolling Back
 
 | Action | How |
 |---|---|
 | Normal deploy | Push to `main` or trigger workflow without tag |
-| Roll back | Trigger workflow → enter tag e.g. `main-v19-ccde0368-v2.10.0-entur-32` |
+| Update the OTP image | Two commits, see [Updating the OTP image](#updating-the-otp-image) |
+| Roll back | Trigger workflow → enter tag e.g. `main-v19-ccde0368-v2.10.0-entur-32`. Set `skip_graph_check` for an older journey planner image |
 | Find available tags | `git tag -l` or GitHub → Code → Tags |
 
 ## Deviations from the Golden Path

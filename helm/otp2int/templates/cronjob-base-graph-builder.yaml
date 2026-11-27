@@ -51,7 +51,7 @@ spec:
             env:
             - name: TZ
               value: Europe/Oslo
-            image: {{ .Values.image.identifier }}
+            image: {{ .Values.cronjobGraphBuilder.image }}
             imagePullPolicy: {{ .Values.cronjobGraphBuilder.imagePullPolicy }}
             livenessProbe:
               failureThreshold: 100

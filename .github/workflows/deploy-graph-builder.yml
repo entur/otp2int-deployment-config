@@ -1,0 +1,68 @@
+name: Deploy graph builder
+
+# Deploys the graph builder release otp2int-graph-builder (helm/otp2int-graph-builder).
+# After each deploy, this workflow builds the base graph and the transit graph.
+# cd.yml calls this workflow after a push to main, before deploy-serving-pods.yml.
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Repo tag to deploy (e.g. main-v19-ccde0368-v2.10.0-entur-32). Leave empty to deploy HEAD.
+        required: false
+        type: string
+
+# Run one deploy at a time. A newer queued deploy replaces an older queued deploy.
+concurrency:
+  group: deploy-otp2int-graph-builder-dev
+  cancel-in-progress: false
+
+jobs:
+  helm-lint:
+    if: ${{ !inputs.tag }}
+    uses: entur/gha-helm/.github/workflows/lint.yml@v2
+    with:
+      environment: dev
+      chart: helm/otp2int-graph-builder
+      values: values-kub-ent-jp-dev.yaml
+
+  deploy-dev:
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    needs: [ helm-lint ]
+    uses: entur/gha-helm/.github/workflows/deploy.yml@v2
+    with:
+      environment: dev
+      gcp_cluster_location: europe-west4
+      gcp_cluster_name: kub-ent-jp-dev-001
+      image: na
+      git_ref: ${{ inputs.tag }}
+      values: values-kub-ent-jp-dev.yaml
+      chart: helm/otp2int-graph-builder
+      namespace: otp2int
+      release_name: otp2int-graph-builder
+    secrets: inherit
+
+  # The serving pods keep their image and graph.
+  # The transit graph build loads the street graph for the OTP serialization version. Thus build the base graph first.
+  build-base-graph:
+    if: ${{ !cancelled() && needs.deploy-dev.result == 'success' }}
+    needs: deploy-dev
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/run-graph-builder.yml
+    with:
+      cronjob: graph-builder-otp2int-base
+      skip_deployment_restart: true
+    secrets: inherit
+
+  build-transit-graph:
+    needs: build-base-graph
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/run-graph-builder.yml
+    with:
+      cronjob: graph-builder-otp2int
+      skip_deployment_restart: true
+    secrets: inherit

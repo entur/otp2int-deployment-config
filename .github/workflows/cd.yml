@@ -1,0 +1,92 @@
+# Continuous Deployment Workflow
+#
+# Deploys the changed Helm releases after a push to main, in a fixed order:
+# 1. deploy-graph-builder.yml deploys otp2int-graph-builder and builds the base graph and the transit graph.
+# 2. deploy-serving-pods.yml deploys otp2int.
+# Thus a commit that changes the OTP image in both charts gives the serving pods the new image
+# only after the graphs are built with that image. If the graph builder deploy or a graph build fails,
+# the serving deploy does not run.
+#
+# Run deploy-serving-pods.yml or deploy-graph-builder.yml manually to deploy one release, or to roll back with a tag.
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'helm/**'
+      - '.github/workflows/cd.yml'
+      - '.github/workflows/deploy-serving-pods.yml'
+      - '.github/workflows/deploy-graph-builder.yml'
+
+# cancel-in-progress: false never interrupts a running deploy. GitHub keeps only the latest queued run.
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      graph_builder_changed: ${{ steps.diff.outputs.graph_builder_changed }}
+      serving_changed: ${{ steps.diff.outputs.serving_changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Find the changed releases
+        id: diff
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          # Without the commit before the push (new branch or force push), deploy both releases.
+          if ! changed_files=$(git diff --name-only "${BEFORE_SHA}" "${GITHUB_SHA}" 2>/dev/null); then
+            echo "::warning::Cannot compare with ${BEFORE_SHA}. Deploying both releases."
+            changed_files=".github/workflows/cd.yml"
+          fi
+          echo "Changed files:"
+          echo "${changed_files}"
+
+          graph_builder_changed=false
+          serving_changed=false
+          if echo "${changed_files}" | grep -qE '^(helm/otp2int-graph-builder/|\.github/workflows/(cd|deploy-graph-builder)\.yml$)'; then
+            graph_builder_changed=true
+          fi
+          if echo "${changed_files}" | grep -qE '^(helm/otp2int/|\.github/workflows/(cd|deploy-serving-pods)\.yml$)'; then
+            serving_changed=true
+          fi
+          echo "graph_builder_changed=${graph_builder_changed}" >> "$GITHUB_OUTPUT"
+          echo "serving_changed=${serving_changed}" >> "$GITHUB_OUTPUT"
+
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          | Release | Deploy |
+          |---|---|
+          | otp2int-graph-builder | ${graph_builder_changed} |
+          | otp2int | ${serving_changed} |
+          EOF
+
+  deploy-graph-builder:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.graph_builder_changed == 'true' }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/deploy-graph-builder.yml
+    secrets: inherit
+
+  deploy:
+    needs: [ detect-changes, deploy-graph-builder ]
+    # Run after a successful or skipped graph builder deploy, never after a failed one.
+    if: >-
+      !cancelled()
+      && needs.detect-changes.outputs.serving_changed == 'true'
+      && (needs.deploy-graph-builder.result == 'success' || needs.deploy-graph-builder.result == 'skipped')
+    permissions:
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/deploy-serving-pods.yml
+    secrets: inherit

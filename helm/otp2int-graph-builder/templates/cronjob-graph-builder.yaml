@@ -5,7 +5,7 @@ metadata:
     {{- include "graph.builder.labels" . | indent 4 }}
   annotations:
       {{- include "common.annotations" . | indent 4 }}
-  name: graph-builder-otp2int-base
+  name: graph-builder-otp2int
   namespace: {{ .Release.Namespace }}
 spec:
   concurrencyPolicy: Forbid
@@ -22,16 +22,58 @@ spec:
             {{- include "graph.builder.labels" . | indent 12 }}
         spec:
           serviceAccountName: application
+          initContainers:
+            - name: merge-feeds
+              image: google/cloud-sdk:588.0.0-slim
+              imagePullPolicy: IfNotPresent
+              command: [ "/bin/bash", "-c" ]
+              args:
+                - |
+                  set -euo pipefail
+                  WORK=/netex-data/work
+                  mkdir -p "$WORK"
+                  echo "Downloading NeTEx datasets"
+                  gcloud storage cp "gs://{{ .Values.mardukBucket }}/outbound/netex/rb_norway-aggregated-netex.zip" "$WORK/norway.zip"
+                  gcloud storage cp "gs://{{ .Values.swedenBucket }}/sweden_aggregated_latest.zip" "$WORK/sweden.zip"
+                  echo "Merging datasets into int.zip"
+                  python3 /scripts/merge_netex.py /netex-data/int.zip "$WORK/norway.zip" "$WORK/sweden.zip"
+                  rm -rf "$WORK"
+                  ls -l /netex-data
+              env:
+                - name: CLOUDSDK_CONFIG
+                  value: /tmp/gcloud
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+                requests:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                capabilities:
+                  drop: [ "ALL" ]
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - mountPath: /netex-data
+                  name: netex-data
+                - mountPath: /tmp
+                  name: tmp
+                - mountPath: /scripts
+                  name: merge-netex-script
+                  readOnly: true
           containers:
           - command:
               - "java"
             args:
               - "-server"
-              - "-Xms{{ .Values.cronjobGraphBuilder.resources.xms }}"
-              - "-Xmx{{ .Values.cronjobGraphBuilder.resources.xmx }}"
-              - "-XX:-UseBASE64Intrinsics"
+              - "-Xms{{ .Values.resources.xms }}"
+              - "-Xmx{{ .Values.resources.xmx }}"
               - "-XX:MaxGCPauseMillis=5000"
               - "-XX:+UseTransparentHugePages"
+              - "-XX:-UseBASE64Intrinsics"
               - "-XX:+AlwaysPreTouch"
               - "-XX:+UseCompactObjectHeaders"
               - "--add-opens=java.base/java.lang=ALL-UNNAMED"
@@ -45,16 +87,16 @@ spec:
               - "-Dentur.otp.service.name=otp2int-gb"
               - "-jar"
               - "otp-shaded.jar"
-              - --buildStreet
+              - --loadStreet
               - "/etc/application-config"
               - "--save"
             env:
             - name: TZ
               value: Europe/Oslo
-            image: {{ .Values.cronjobGraphBuilder.image }}
-            imagePullPolicy: {{ .Values.cronjobGraphBuilder.imagePullPolicy }}
+            image: {{ .Values.image.identifier }}
+            imagePullPolicy: {{ .Values.image.imagePullPolicy }}
             livenessProbe:
-              failureThreshold: 100
+              failureThreshold: 200
               httpGet:
                 path: /metrics
                 port: 9779
@@ -63,24 +105,24 @@ spec:
               periodSeconds: 10
               successThreshold: 1
               timeoutSeconds: 30
-            name: graph-builder-otp2int-base
+            name: graph-builder-otp2int
             readinessProbe:
-              failureThreshold: 100
+              failureThreshold: 3
               httpGet:
                 path: /metrics
                 port: 9779
                 scheme: HTTP
-              initialDelaySeconds: 300
+              initialDelaySeconds: 30
               periodSeconds: 10
               successThreshold: 1
               timeoutSeconds: 20
             resources:
               limits:
-                cpu: "{{ .Values.cronjobGraphBuilder.resources.cpuLimit }}"
-                memory: {{ .Values.cronjobGraphBuilder.resources.memLimit }}
+                cpu: "{{ .Values.resources.cpuLimit }}"
+                memory: {{ .Values.resources.memLimit }}
               requests:
-                cpu: "{{ .Values.cronjobGraphBuilder.resources.cpuRequest }}"
-                memory: {{ .Values.cronjobGraphBuilder.resources.memRequest }}
+                cpu: "{{ .Values.resources.cpuRequest }}"
+                memory: {{ .Values.resources.memRequest }}
             securityContext:
               allowPrivilegeEscalation: false
               runAsNonRoot: true
@@ -97,6 +139,9 @@ spec:
             - mountPath: /etc/otp2/logback.xml
               name: logback-config-volume
               subPath: logback.xml
+            - mountPath: /netex-data
+              name: netex-data
+              readOnly: true
           dnsPolicy: ClusterFirst
           restartPolicy: Never
           schedulerName: default-scheduler
@@ -114,8 +159,16 @@ spec:
             name: application-config
           - configMap:
               defaultMode: 420
-              name: otp2int-logback-config
+              name: graph-builder-otp2int-logback-config
             name: logback-config-volume
+          - name: netex-data
+            emptyDir: {}
+          - name: tmp
+            emptyDir: {}
+          - configMap:
+              defaultMode: 420
+              name: graph-builder-otp2int-merge-netex
+            name: merge-netex-script
       backoffLimit: 1
       ttlSecondsAfterFinished: 86400 #24h
   # the cron job should never run as it is used only as a template for creating new jobs.

@@ -1,0 +1,146 @@
+name: Image bump
+
+# Keeps the otp2 image up to date in both Helm charts:
+# - image.identifier in helm/otp2int-graph-builder/values.yaml is the image of the graph builder CronJobs.
+# - image.identifier in helm/otp2int/values.yaml is the image of the serving pods.
+#
+# Finds the newest of the GCR release tag and the two pinned tags on main. If a pin is older,
+# it puts one commit that sets both images to the newest tag on the branch chore/update-otp,
+# and opens a pull request. This also syncs the two images if they are different.
+# If the pull request is already open, the run updates that pull request instead.
+# After the merge, cd.yml builds the graphs with the new image before it deploys the serving pods.
+#
+# The branch is owned by this workflow. Each update rebuilds the branch from
+# main and force-pushes it, so manual commits on the branch are lost.
+#
+# The registry also carries non-release tags (e.g. test-oracle-graal-vm-25),
+# so only tags that match the release pattern are used. Release tags are
+# compared by version, not by push time, so a late hotfix for an older line
+# does not cause a downgrade.
+#
+# Pull requests opened with the default GITHUB_TOKEN deliberately do not
+# trigger other workflows (GitHub's loop-prevention), which would silently
+# stop the PR checks (build.yml, pr.yml) from running. OTP2INT_GITFLOW_PAT is a
+# PAT from a bot/machine GitHub account with `contents: write` and
+# `pull-requests: write` on this repo. Store it as a repo secret named
+# OTP2INT_GITFLOW_PAT (Settings -> Secrets and variables -> Actions).
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: image-bump
+  cancel-in-progress: false
+
+env:
+  BRANCH_NAME: chore/update-otp
+  IMAGE_REPOSITORY: eu.gcr.io/entur-system-1287/otp2
+  SERVING_VALUES_FILE: helm/otp2int/values.yaml
+  GRAPH_BUILDER_VALUES_FILE: helm/otp2int-graph-builder/values.yaml
+
+jobs:
+  bump:
+    runs-on: ubuntu-24.04
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # A manual run from another branch still bases the pull request on main.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          token: ${{ secrets.OTP2INT_GITFLOW_PAT }}
+
+      - name: Authenticate to GCP
+        uses: entur/gha-meta/.github/actions/cloud-auth@v1
+        with:
+          environment: dev
+          cloud_provider: gcp
+          gcp_workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+          gcp_service_account: ${{ vars.SERVICE_ACCOUNT }}
+
+      - name: Find newest otp2 release tag on GCR
+        id: latest
+        run: |
+          set -euo pipefail
+          LATEST_TAG=$(gcloud container images list-tags "$IMAGE_REPOSITORY" --format=json \
+            | jq -r '.[] | .tags[]? | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+-entur-[0-9]+$"))' \
+            | sort -V | tail -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "::error::could not resolve an otp2 release tag from GCR"
+            exit 1
+          fi
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Compare with pinned images
+        id: compare
+        env:
+          LATEST_TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          set -euo pipefail
+          SERVING_IMAGE=$(yq '.image.identifier' "$SERVING_VALUES_FILE")
+          GRAPH_BUILDER_IMAGE=$(yq '.image.identifier' "$GRAPH_BUILDER_VALUES_FILE")
+          NEWEST_TAG=$(printf '%s\n%s\n%s\n' "${SERVING_IMAGE##*:}" "${GRAPH_BUILDER_IMAGE##*:}" "$LATEST_TAG" | sort -V | tail -n 1)
+          NEW_IMAGE="$IMAGE_REPOSITORY:$NEWEST_TAG"
+
+          if [ "$SERVING_IMAGE" = "$NEW_IMAGE" ] && [ "$GRAPH_BUILDER_IMAGE" = "$NEW_IMAGE" ]; then
+            echo "Both pins on main are already the newest release $NEWEST_TAG (GCR newest: $LATEST_TAG)"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Serving $SERVING_IMAGE, graph builder $GRAPH_BUILDER_IMAGE, new $NEW_IMAGE"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "new_image=$NEW_IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Push image bump and open or update pull request
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          NEW_IMAGE: ${{ steps.compare.outputs.new_image }}
+          GH_TOKEN: ${{ secrets.OTP2INT_GITFLOW_PAT }}
+        run: |
+          set -euo pipefail
+          OPEN_PR_NUMBER=$(gh pr list --head "$BRANCH_NAME" --base main --state open --json number --jq '.[0].number // empty')
+          BRANCH_SERVING_IMAGE=""
+          BRANCH_GRAPH_BUILDER_IMAGE=""
+          if git fetch --quiet origin "$BRANCH_NAME"; then
+            BRANCH_SERVING_IMAGE=$(git show "FETCH_HEAD:$SERVING_VALUES_FILE" | yq '.image.identifier')
+            BRANCH_GRAPH_BUILDER_IMAGE=$(git show "FETCH_HEAD:$GRAPH_BUILDER_VALUES_FILE" | yq '.image.identifier')
+          fi
+          if [ -n "$OPEN_PR_NUMBER" ] && [ "$BRANCH_SERVING_IMAGE" = "$NEW_IMAGE" ] && [ "$BRANCH_GRAPH_BUILDER_IMAGE" = "$NEW_IMAGE" ]; then
+            echo "PR #$OPEN_PR_NUMBER already bumps both images to $NEW_IMAGE"
+            exit 0
+          fi
+
+          # Edit the line in place. yq -i can remove blank lines in values.yaml.
+          for VALUES_FILE in "$GRAPH_BUILDER_VALUES_FILE" "$SERVING_VALUES_FILE"; do
+            VALUES_LINE=$(yq '.image.identifier | line' "$VALUES_FILE")
+            sed -i "${VALUES_LINE}s#: .*#: ${NEW_IMAGE}#" "$VALUES_FILE"
+            if [ "$(yq '.image.identifier' "$VALUES_FILE")" != "$NEW_IMAGE" ]; then
+              echo "::error::could not set image.identifier in $VALUES_FILE to $NEW_IMAGE"
+              exit 1
+            fi
+          done
+
+          COMMIT_TITLE="chore(deps): bump otp2 image to ${NEW_IMAGE##*:}"
+          PR_BODY="Bumps the otp2 image to \`$NEW_IMAGE\` in both charts:
+          - \`$GRAPH_BUILDER_VALUES_FILE\` (graph builder CronJobs)
+          - \`$SERVING_VALUES_FILE\` (serving pods)
+
+          After the merge, \`cd.yml\` deploys the graph builder and builds the base graph and the transit graph with the new image.
+          Then it deploys the serving pods. If a graph build fails, the serving pods keep the old image."
+
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git switch -c "$BRANCH_NAME"
+          git add "$GRAPH_BUILDER_VALUES_FILE" "$SERVING_VALUES_FILE"
+          git commit -m "$COMMIT_TITLE"
+          git push --force origin "$BRANCH_NAME"
+
+          if [ -n "$OPEN_PR_NUMBER" ]; then
+            gh pr edit "$OPEN_PR_NUMBER" --title "$COMMIT_TITLE" --body "$PR_BODY"
+          else
+            gh pr create --base main --head "$BRANCH_NAME" --title "$COMMIT_TITLE" --body "$PR_BODY"
+          fi

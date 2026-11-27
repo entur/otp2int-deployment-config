@@ -55,7 +55,7 @@ jobs:
       - name: Tag repo
         id: tag
         run: |
-          IMAGE_TAG=$(grep '^  identifier:' helm/otp2int/values.yaml | awk -F: '{print $NF}' | tr -d ' ')
+          IMAGE_TAG=$(yq '.image.identifier | split(":") | .[-1]' helm/otp2int/values.yaml)
           REPO_TAG="${{ github.ref_name }}-v${{ github.run_number }}-${GITHUB_SHA:0:8}-${IMAGE_TAG}"
           gh api repos/${{ github.repository }}/git/refs \
             --method POST \
@@ -192,7 +192,7 @@ jobs:
       - name: Annotate deployment
         run: |
           DEPLOYED_TAG="${{ needs.tag-repo.outputs.repo_tag || inputs.tag }}"
-          IMAGE=$(grep '^  identifier:' helm/otp2int/values.yaml | awk '{print $2}')
+          IMAGE=$(yq '.image.identifier' helm/otp2int/values.yaml)
           kubectl annotate deployment/otp2int \
             entur.io/environment="dev" \
             entur.io/git-tag="${DEPLOYED_TAG}" \
@@ -203,7 +203,7 @@ jobs:
       - name: Deployment summary
         run: |
           DEPLOYED_TAG="${{ needs.tag-repo.outputs.repo_tag || inputs.tag }}"
-          IMAGE=$(grep '^  identifier:' helm/otp2int/values.yaml | awk '{print $2}')
+          IMAGE=$(yq '.image.identifier' helm/otp2int/values.yaml)
           DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           cat >> $GITHUB_STEP_SUMMARY << EOF
           ## Deployment Summary

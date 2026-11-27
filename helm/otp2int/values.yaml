@@ -26,8 +26,12 @@ configMap:
 environmentValues:
   otp2intGcpBaseName: "gs://ror-otp-graphs-gcp2int-dev/"
 
+# Image of the serving pods. To update OTP, use two commits:
+# 1. Set cronjobGraphBuilder.image to the new image. The deploy builds the graphs with it.
+# 2. When the graph build succeeds, set image.identifier to the same image.
+# The deploy stops if image.identifier changes before graphs are built with that image.
 image:
-  identifier: eu.gcr.io/entur-system-1287/otp2:v2.11.0-entur-65
+  identifier: eu.gcr.io/entur-system-1287/otp2:v2.11.0-entur-94
   imagePullPolicy: Always
 
 build:
@@ -40,6 +44,8 @@ service:
 maxConcurrentRoutingRequests: 2
 
 cronjobGraphBuilder:
+  # Image of the graph builder CronJobs. See the update steps at image.identifier.
+  image: eu.gcr.io/entur-system-1287/otp2:v2.11.0-entur-94
   imagePullPolicy: Always
   mardukBucket: "marduk-dev"
   mardukInternalBucket: "ror-marduk-internal-dev"

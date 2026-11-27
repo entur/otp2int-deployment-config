@@ -49,6 +49,7 @@ spec:
         - -Xms{{ .Values.resources.xms }}
         - -Xmx{{ .Values.resources.xmx }}
         - -XX:+UseTransparentHugePages
+        - -XX:-UseBASE64Intrinsics
         - -XX:+AlwaysPreTouch
         - -XX:ActiveProcessorCount={{ .Values.resources.cpuRequest }}
         - --add-opens=java.base/java.lang=ALL-UNNAMED

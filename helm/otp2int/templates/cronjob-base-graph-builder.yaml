@@ -29,6 +29,7 @@ spec:
               - "-server"
               - "-Xms{{ .Values.cronjobGraphBuilder.resources.xms }}"
               - "-Xmx{{ .Values.cronjobGraphBuilder.resources.xmx }}"
+              - "-XX:-UseBASE64Intrinsics"
               - "-XX:MaxGCPauseMillis=5000"
               - "-XX:+UseTransparentHugePages"
               - "-XX:+AlwaysPreTouch"
@@ -50,7 +51,7 @@ spec:
             env:
             - name: TZ
               value: Europe/Oslo
-            image: {{ .Values.image.identifier }}
+            image: {{ .Values.cronjobGraphBuilder.image }}
             imagePullPolicy: {{ .Values.cronjobGraphBuilder.imagePullPolicy }}
             livenessProbe:
               failureThreshold: 100

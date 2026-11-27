@@ -16,6 +16,13 @@ on:
         description: CronJob template to create job from
         required: true
         type: string
+      skip_deployment_restart:
+        description: >-
+          Do not restart otp2int after the build. Use this when you want to build a graph without rolling it out.
+          NB! If the OTP serialization version does not change, the build overwrites the graph that the pods load at their next restart.
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   run-graph-builder:
@@ -24,6 +31,15 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    # All graph builds write to the same bucket, and the transit graph build reads the street graph from the base graph build.
+    # Thus run only one graph build at a time, across all workflows.
+    concurrency:
+      group: otp2int-graph-builder
+      cancel-in-progress: false
+    env:
+      CRONJOB_NAME: ${{ inputs.cronjob }}
+      # run_id is unique across workflows. run_number is not, and several workflows call this workflow.
+      JOB_NAME: ${{ inputs.cronjob }}-gha-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Authenticate to GCP
@@ -41,9 +57,76 @@ jobs:
           gcp_cluster_name: kub-ent-jp-dev-001
           gcp_cluster_location: europe-west4
       - name: Create job from CronJob template
+        id: create-job
         run: |
-          JOB_NAME="${{ inputs.cronjob }}-gha-${{ github.run_number }}"
+          set -euo pipefail
           kubectl create job "${JOB_NAME}" \
-            --from=cronjob/${{ inputs.cronjob }} \
+            --from="cronjob/${CRONJOB_NAME}" \
             -n otp2int
-          echo "Created job: ${JOB_NAME}" >> $GITHUB_STEP_SUMMARY
+          graph_builder_image=$(kubectl get job "${JOB_NAME}" -n otp2int \
+            -o jsonpath="{.spec.template.spec.containers[?(@.name==\"${CRONJOB_NAME}\")].image}")
+          echo "graph_builder_image=${graph_builder_image}" >> "$GITHUB_OUTPUT"
+          cat >> "$GITHUB_STEP_SUMMARY" << EOF
+          Created job: ${JOB_NAME}
+          Graph builder image: \`${graph_builder_image}\`
+          EOF
+      - name: Wait for job to finish
+        run: |
+          set -euo pipefail
+          # A pod that cannot start does not make the Job fail. Thus stop when a start error stays for 5 polls.
+          max_start_error_poll_count=5
+          start_error_poll_count=0
+          while true; do
+            succeeded_count=$(kubectl get job "${JOB_NAME}" -n otp2int -o jsonpath='{.status.succeeded}')
+            failed_condition=$(kubectl get job "${JOB_NAME}" -n otp2int \
+              -o jsonpath='{.status.conditions[?(@.type=="Failed")].status}')
+            if [ "${succeeded_count:-0}" -ge 1 ]; then
+              echo "Job ${JOB_NAME} succeeded" | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            if [ "${failed_condition}" = "True" ]; then
+              echo "::error::Job ${JOB_NAME} failed. Pods are not restarted."
+              kubectl logs "job/${JOB_NAME}" -n otp2int --tail=100 || true
+              exit 1
+            fi
+
+            container_waiting_reasons=$(kubectl get pods -n otp2int -l "batch.kubernetes.io/job-name=${JOB_NAME}" \
+              -o jsonpath='{.items[*].status.initContainerStatuses[*].state.waiting.reason} {.items[*].status.containerStatuses[*].state.waiting.reason}')
+            case "${container_waiting_reasons}" in
+              *ErrImagePull*|*ImagePullBackOff*|*InvalidImageName*|*CreateContainerConfigError*)
+                start_error_poll_count=$((start_error_poll_count + 1))
+                ;;
+              *)
+                start_error_poll_count=0
+                ;;
+            esac
+            if [ "${start_error_poll_count}" -ge "${max_start_error_poll_count}" ]; then
+              echo "::error::Job ${JOB_NAME} cannot start its containers: ${container_waiting_reasons}. The job is suspended. Pods are not restarted."
+              # Suspend stops the pods, so that they do not keep their CPU and memory requests. The Job stays for debugging.
+              kubectl patch job "${JOB_NAME}" -n otp2int --type merge -p '{"spec":{"suspend":true}}'
+              exit 1
+            fi
+
+            echo "Job ${JOB_NAME} is still running"
+            sleep 60
+          done
+
+      # deploy.yml reads this annotation. It stops a deploy of a serving image that has no graph built with that image.
+      # The transit graph build loads the street graph from the base graph build. Thus its success means that both graphs exist.
+      - name: Record the image of the graph build
+        if: ${{ inputs.cronjob == 'graph-builder-otp2int' }}
+        env:
+          GRAPH_BUILDER_IMAGE: ${{ steps.create-job.outputs.graph_builder_image }}
+        run: |
+          set -euo pipefail
+          kubectl annotate cronjob/graph-builder-otp2int -n otp2int \
+            entur.io/graph-built-with-image="${GRAPH_BUILDER_IMAGE}" --overwrite
+          echo "Graphs built with: \`${GRAPH_BUILDER_IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Only the street+transit graph is served by the deployment. The base graph is input to the next build.
+      - name: Rolling restart of otp2int to load the new graph
+        if: ${{ inputs.cronjob == 'graph-builder-otp2int' && !inputs.skip_deployment_restart }}
+        run: |
+          kubectl rollout restart deployment/otp2int -n otp2int
+          kubectl rollout status deployment/otp2int -n otp2int --timeout=30m
+          echo "Restarted deployment/otp2int" >> "$GITHUB_STEP_SUMMARY"

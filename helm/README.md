@@ -1,62 +1,44 @@
-## Introduction
+# otp2int Helm chart
 
-This chart will setup the `otp2` app, and it's dependencies in a given namespace.
+This chart deploys the `otp2int` journey planner and its graph builder CronJobs in the `otp2int` namespace.
 
-Note: We do not deploy app manually we use Harness to deploy
-## Installing the Chart
+Do not deploy the chart manually.
+The `deploy.yml` workflow deploys it with `entur/gha-helm` as the release `otp2int`.
+See the [repository README](../README.md) for the deploy flow, rollback and the graph builds.
 
-### Print template
+## Images
 
-To see the template output before deploying:
-```bash
-$ helm template DIRNAME --name RELEASENAME  --values VALUES.YAML --namespace NAMESPACE
-```
+The chart has two image values in `otp2int/values.yaml`:
 
-For example:
-```bash
-$ helm template helm/OpenTripPlanner/ --name otp  --values helm/OpenTripPlanner/dev-c2-values.yaml --namespace dev
-```
+- `image.identifier` is the image of the journey planner pods.
+- `cronjobGraphBuilder.image` is the image of the graph builder CronJobs.
 
-### Install chart
+Update the OTP image in two commits: first `cronjobGraphBuilder.image`, then `image.identifier`.
+See [Updating the OTP image](../README.md#updating-the-otp-image).
 
-To install the chart with the release name `my-release`:
+## Print the templates
 
-```bash
-$ helm install DIRNAME --name RELEASENAME --namespace NAMESPACE
-```
-Watch the deployment with this command
+To see the rendered templates for dev, run this from the repository root:
 
 ```bash
-$ kubectl get pods -n NAMESPACE
+helm template otp2int ./helm/otp2int \
+  -f helm/otp2int/env/values-kub-ent-jp-dev.yaml \
+  --namespace otp2int
 ```
 
-## Uninstalling the Chart (WARNING)
-
-To completely remove `my-release`:
+## Lint the chart
 
 ```bash
-$ helm delete <release-name> --purge
+helm lint helm/otp2int -f helm/otp2int/env/values-kub-ent-jp-dev.yaml
 ```
 
-## Updating a chart
-Run helm upgrade:
+## Release history
+
+To see the deployed revisions:
 
 ```bash
-$ helm upgrade --install RELEASENAME DIRNAME --namespace NAMESPACE --values VALUES.YAML
+helm history otp2int --namespace otp2int
 ```
 
-for example:
-```bash
-$ helm upgrade --install otp helm/OpenTripPlanner --namespace dev --values helm/OpenTripPlanner/dev-c2-values.yaml
-```
-
-## Helm rollback
-Check available revision:
-```bash
-$ helm history REPONAME
-```
-
-Rollback to a revision:
-```bash
-$ helm rollback REPONAME REVISIONNUMBER
-```
+To roll back, use the `deploy.yml` workflow with a repository tag.
+A `helm rollback` does not update the repository tag annotations on the deployment, and the next deploy overwrites it.

@@ -105,15 +105,30 @@ data:
           "purgeExpiredData": true
         },
         "updaters": [
+    {{- if .Values.configuration.siriETPubsubUpdater.enabled }}
+          // SIRI ET Google Pubsub updater
+          {
+            "type": "siri-et-google-pubsub-updater",
+            "feedId": "INT",
+            "reconnectPeriod": "5s",
+            "initialGetDataTimeout": "1m20s",
+            "topicProjectName": "{{ .Values.configuration.siriETPubsubUpdater.topicProjectName }}",
+            "subscriptionProjectName": "{{ .Values.configuration.siriETPubsubUpdater.subscriptionProjectName }}",
+            "topicName": "{{ .Values.configuration.siriETPubsubUpdater.pubsubTopicName }}",
+            "dataInitializationUrl": "{{ .Values.configuration.siriETPubsubUpdater.dataInitializationUrl }}"
+          }
+    {{- else }}
+          // SIRI ET updater
           {
             "type": "siri-et-updater",
             "feedId": "INT",
-            "url": "http://anshar-int.dev.entur.internal/anshar/services?SIRI_VERSION=2.1",
+            "url": "{{ .Values.configuration.siriETUpdater }}",
             "frequency": "20s",
             "timeout": "30s",
             "fuzzyTripMatching": false,
             "headers": { "ET-Client-Name": "${HOSTNAME}-ET" }
           }
+    {{- end }}
         ]
       }
 kind: ConfigMap

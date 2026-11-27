@@ -53,7 +53,7 @@ data:
           }
         ],
         "dem" : [
-          {"source": "gs://{{ .Values.cronjobGraphBuilder.mardukInternalBucket }}/kartverket/heightData/norge_dem_10m_33_2026_05_01.tif"}
+          {"source": "gs://{{ .Values.mardukInternalBucket }}/kartverket/heightData/norge_dem_10m_33_2026_05_01.tif"}
         ],
         "transitFeeds": [
           {

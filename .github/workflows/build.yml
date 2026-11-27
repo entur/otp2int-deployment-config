@@ -1,8 +1,8 @@
 # Build Workflow
 #
-# Lints the Helm chart on every pull request. Terraform is linted in terraform.yml.
+# Lints the Helm charts on every pull request. Terraform is linted in terraform.yml.
 # This repository has no Docker image, so there is no test, Docker build, scan or push step.
-# Deployment happens in deploy.yml after merge to main.
+# Deployment happens in deploy-serving-pods.yml after merge to main.
 
 name: Build
 
@@ -19,8 +19,11 @@ concurrency:
 
 jobs:
   helm-lint:
+    strategy:
+      matrix:
+        chart: [ helm/otp2int, helm/otp2int-graph-builder ]
     uses: entur/gha-helm/.github/workflows/lint.yml@v2
     with:
       environment: dev
-      chart: helm/otp2int
+      chart: ${{ matrix.chart }}
       values: values-kub-ent-jp-dev.yaml

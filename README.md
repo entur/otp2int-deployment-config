@@ -8,15 +8,16 @@ Helm deployment configuration for the **otp2int** (OpenTripPlanner International
 
 ## Structure
 
+The repository has two Helm charts.
+Each chart is a separate Helm release in the `otp2int` namespace, with its own deploy workflow.
+
 ```text
-helm/otp2int/
+helm/otp2int/                            # Release otp2int, deployed by deploy-serving-pods.yml
 ├── Chart.yaml
-├── values.yaml                          # Default values, including the two images
+├── values.yaml                          # Default values, including the serving image
 ├── env/
 │   ├── logback.xml
 │   └── values-kub-ent-jp-dev.yaml       # Dev environment overrides
-├── files/
-│   └── merge_netex.py                   # Merges the Norway and Sweden NeTEx datasets
 └── templates/
     ├── deployment.yaml                  # OTP2int journey planner
     ├── service.yaml
@@ -25,12 +26,26 @@ helm/otp2int/
     ├── configmap.yaml                   # router-config.json
     ├── otp2-feature-configmap.yaml      # otp-config.json feature flags
     ├── otp2int-build-configmap.yaml     # build-config.json with the graph path
-    ├── logback-configmap.yaml           # Used by the journey planner and the graph builders
+    └── logback-configmap.yaml
+
+helm/otp2int-graph-builder/              # Release otp2int-graph-builder, deployed by deploy-graph-builder.yml
+├── Chart.yaml
+├── values.yaml                          # Default values, including the graph builder image
+├── env/
+│   ├── logback.xml
+│   └── values-kub-ent-jp-dev.yaml       # Dev environment overrides
+├── files/
+│   └── merge_netex.py                   # Merges the Norway and Sweden NeTEx datasets
+└── templates/
     ├── configmap-graph-builder.yaml     # Graph builder build/otp config
     ├── configmap-merge-netex.yaml       # merge_netex.py for the transit graph build
+    ├── logback-configmap.yaml
     ├── cronjob-base-graph-builder.yaml  # Street graph job template (suspend=true)
     └── cronjob-graph-builder.yaml       # Street+transit graph job template (suspend=true)
 ```
+
+The graph builders write the graphs to `environmentValues.otp2intGcpBaseName`, and the journey planner reads them from there.
+Keep this value the same in both charts.
 
 ## Components
 
@@ -50,24 +65,18 @@ The serialization version id changes only when the graph format changes.
 > See [Updating the OTP image](#updating-the-otp-image).
 
 #### Updating the OTP image
-The chart has two image values:
-- `cronjobGraphBuilder.image` is the image of the graph builder CronJobs.
-- `image.identifier` is the image of the journey planner pods.
+Each chart has its own image value, `image.identifier`:
+- `helm/otp2int-graph-builder/values.yaml` has the image of the graph builder CronJobs.
+- `helm/otp2int/values.yaml` has the image of the journey planner pods.
 
-Update the image in two commits:
-1. Set `cronjobGraphBuilder.image` to the new image, and merge.
-   The deploy updates the CronJobs, and then builds the base graph and the transit graph with the new image.
-   The journey planner pods keep the old image.
-1. When the graph build succeeds, set `image.identifier` to the same image, and merge.
-   The journey planner pods get the new image and load the new graph.
+Set both images to the new image in the same commit.
+`image-bump.yml` opens a pull request that does this when a new OTP release exists.
+After the merge, `cd.yml` does these steps in this order:
+1. Deploys the graph builder release, and builds the base graph and the transit graph with the new image.
+1. Deploys the journey planner release. The pods get the new image and load the new graph.
 
-After a successful transit graph build, `run-graph-builder.yml` writes the image to the annotation `entur.io/graph-built-with-image` on the CronJob `graph-builder-otp2int`.
-The deploy stops with an error if `image.identifier` changes to an image that is not in this annotation.
-This prevents the crash loop if you merge the second commit too early, or put both changes in one commit.
-
-Until the second commit, the scheduled graph builds use the new image.
-If the serialization version id changed, the journey planner does not get fresh graphs in this period.
-Thus merge the second commit soon after the graph build succeeds.
+If the graph builder deploy or a graph build fails, the journey planner pods keep the old image.
+See [Deploy on push to main](#deploy-on-push-to-main-cdyml).
 
 #### Rolling back to a previous graph
 Each build overwrites the graph file for its serialization version id.
@@ -81,9 +90,9 @@ The workflows create jobs from them.
 - `graph-builder-otp2int-base` builds the street graph.
 - `graph-builder-otp2int` loads the street graph, adds the transit data and builds the graph that the journey planner loads.
 
-The graph is built dailty using scheduled workflows.
+The graph is built daily using scheduled workflows.
 After the scheduled transit graph build, the journey planner pods restart to load the new graph.
-The deploy also builds both graphs when `cronjobGraphBuilder.image` changes.
+`deploy-graph-builder.yml` also builds both graphs after each deploy.
 Only one graph build runs at a time.
 
 The graphs are built from:
@@ -94,46 +103,76 @@ Elevation data comes from the Kartverket height data (`dem` in `configmap-graph-
 The graph builder uses no real-time updates.
 
 #### Adding new sources
-1. Update `helm/otp2int/templates/configmap-graph-builder.yaml`
+1. Update `helm/otp2int-graph-builder/templates/configmap-graph-builder.yaml`
    1. `transitFeeds`, see the other sources for examples
    2. `osm`, see the other sources for examples
 2. Ensure otp2int pipeline has access to the new sources
 
-## CI/CD Workflows
+## CI/CD workflows
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `deploy.yml` | Push to `main` (except `terraform/**` and `*.md`), manual | Helm lint, tag repo, check images, deploy to dev, build graphs when the graph builder image changed |
+| `cd.yml` | Push to `main` with `helm/**` changes | Call `deploy-graph-builder.yml` and then `deploy-serving-pods.yml`, for the charts that changed |
+| `deploy-serving-pods.yml` | Called by `cd.yml`, manual | Helm lint, tag repo, deploy the release `otp2int` to dev |
+| `deploy-graph-builder.yml` | Called by `cd.yml`, manual | Helm lint, deploy the release `otp2int-graph-builder` to dev, build graphs |
 | `terraform.yml` | PR and push with `terraform/**` changes, manual | Terraform lint, plan and apply |
-| `build.yml` | PR | Helm lint |
+| `build.yml` | PR | Helm lint of both charts |
 | `pr.yml` | PR | Verify PR title and body |
 | `codeql.yml` | PR, push to `main`, weekly | CodeQL security scan |
 | `terraform-drift-detection.yml` | Weekly, manual | Plan dev and open an issue on drift |
-| `image-bump.yml` | Scheduled, manual | Open a PR that bumps the otp2 image to the newest release tag |
-| `run-graph-builder.yml` | Manual, called by `deploy.yml` and the scheduled builds | Create a graph builder job, wait for it, and restart the journey planner after a transit graph build |
+| `image-bump.yml` | Daily at 00:00 UTC, manual | Open a PR that sets both images to the newest release tag |
+| `run-graph-builder.yml` | Manual, called by `deploy-graph-builder.yml` and the scheduled builds | Create a graph builder job, wait for it, and restart the journey planner after a transit graph build |
 | `scheduled-base-graph-build.yml` | Daily at 00:00 UTC | Build the base (street) graph |
 | `scheduled-graph-build.yml` | Daily at 08:00 UTC | Build the transit graph and restart the journey planner |
 
-### Normal Deploy (push to main / workflow_dispatch without tag)
+### Deploy on push to main (`cd.yml`)
+
+```mermaid
+flowchart LR
+    CHG[detect-changes]
+    GB[deploy-graph-builder]
+    SRV[deploy]
+
+    CHG -- graph builder chart changed --> GB
+    CHG -- journey planner chart changed --> SRV
+    GB -- success or skipped --> SRV
+```
+
+- `detect-changes` compares the push with the commit before it.
+  A change to a deploy workflow counts as a change to its chart.
+- `deploy` waits for `deploy-graph-builder`, including the graph builds.
+  It does not run if `deploy-graph-builder` fails.
+- Only one run of `cd.yml` runs at a time.
+  A newer queued run replaces an older queued run.
+
+### Journey planner deploy (`deploy-serving-pods.yml`)
 
 ```mermaid
 flowchart LR
     HL[helm-lint]
     TAG[tag-repo\nmain-vN-sha-imageTag]
-    CHK[check-images]
     DEP[deploy-dev]
     POST[post-deploy]
+
+    HL --> TAG --> DEP --> POST
+```
+
+- Only one deploy runs at a time.
+  A newer queued deploy replaces an older queued deploy.
+
+### Graph builder deploy (`deploy-graph-builder.yml`)
+
+```mermaid
+flowchart LR
+    HL[helm-lint]
+    DEP[deploy-dev]
     BASE[build-base-graph]
     TRANSIT[build-transit-graph]
 
-    HL --> TAG --> DEP
-    CHK --> DEP --> POST
-    DEP -- graph builder image changed --> BASE --> TRANSIT
+    HL --> DEP --> BASE --> TRANSIT
 ```
 
-- `check-images` stops the deploy if the journey planner image changes before graphs exist for it.
-  See [Updating the OTP image](#updating-the-otp-image).
-- `build-base-graph` and `build-transit-graph` run only when `cronjobGraphBuilder.image` changed.
+- `build-base-graph` and `build-transit-graph` run after each deploy.
   They do not restart the journey planner.
 - Only one deploy runs at a time.
   A newer queued deploy replaces an older queued deploy.
@@ -154,16 +193,16 @@ flowchart LR
 > On a PR with `terraform/**` changes, only lint and plan run, and the plan shows on the PR. After merge to `main`, dev is applied automatically. `tf-apply-dev` is skipped when `tf-plan-dev` detects no changes.
 
 > [!IMPORTANT]
-> `deploy.yml` does not wait for `terraform.yml`. If a Helm change needs new infrastructure, merge the Terraform change in its own PR first. Merge the Helm change after `tf-apply-dev` is done.
+> The deploy workflows do not wait for `terraform.yml`. If a Helm change needs new infrastructure, merge the Terraform change in its own PR first. Merge the Helm change after `tf-apply-dev` is done.
 
 ### Manually deploy from branch
-The graph builder uses what ever is *currently* deployed, so to deploy from a branch you need to first deploy the branch, then do the graph build.
+The graph builder uses what ever is *currently* deployed, so to test graph builder changes from a branch you need to first deploy the branch, then do the graph build.
 Main is automatically deployed when merged to the `main` branch, but remember to deploy from main after you are done testing on a branch if you dont merge straight away.
 
-1. Manually run deploy on branch
+1. Manually run `deploy-graph-builder.yml` or `deploy-serving-pods.yml` on the branch, for the chart that you changed
 2. Manually run graph-build on branch
 3. Do your testing/verification
-4. Manually run deploy on main or merge branch to main
+4. Manually run the same deploy on main or merge branch to main
 
 ### Rollback (workflow_dispatch with tag input)
 
@@ -171,29 +210,34 @@ Main is automatically deployed when merged to the `main` branch, but remember to
 flowchart LR
     SKIP1[helm-lint\nskipped]:::skipped
     SKIP2[tag-repo\nskipped]:::skipped
-    CHK[check-images]
     DEP[deploy-dev\nat specified tag]
     POST[post-deploy]
 
     SKIP1 & SKIP2
-    CHK --> DEP --> POST
+    DEP --> POST
 
     classDef skipped fill:#e0e0e0,color:#999,stroke:#ccc
 ```
 
 > `helm-lint` and `tag-repo` are always skipped on rollback. Helm deploys the config and image from the specified tag. Rollback does not change infrastructure. To roll back Terraform, run `terraform.yml` manually and select the tag as the ref.
 
-A rollback to an older journey planner image stops at `check-images`, because the last graph build used the newer image.
-If graphs for the older serialization version id still exist, set `skip_graph_check` to `true` in the workflow input.
-If the tag also has an older `cronjobGraphBuilder.image`, the deploy then builds the graphs again with the older image.
+Each deploy workflow rolls back only its own release.
+`deploy-graph-builder.yml` does not tag the repository, but it accepts any repository tag from `deploy-serving-pods.yml`.
+
+A rollback to an older journey planner image works only if graphs for its serialization version id still exist.
+A rollback of the graph builder to an older image builds the graphs again with the older image.
+
+A tag from before the split into two charts also contains the graph builder CronJobs.
+`deploy-serving-pods.yml` cannot deploy such a tag, because the CronJobs belong to the release `otp2int-graph-builder`.
 
 ### Deploying / Rolling Back
 
 | Action | How |
 |---|---|
-| Normal deploy | Push to `main` or trigger workflow without tag |
-| Update the OTP image | Two commits, see [Updating the OTP image](#updating-the-otp-image) |
-| Roll back | Trigger workflow → enter tag e.g. `main-v19-ccde0368-v2.10.0-entur-32`. Set `skip_graph_check` for an older journey planner image |
+| Normal deploy | Push to `main` or trigger the workflow without tag |
+| Update the OTP image | Merge the `image-bump.yml` pull request, see [Updating the OTP image](#updating-the-otp-image) |
+| Roll back the journey planner | Trigger `deploy-serving-pods.yml` → enter tag e.g. `main-v19-ccde0368-v2.10.0-entur-32` |
+| Roll back the graph builder | Trigger `deploy-graph-builder.yml` → enter a repository tag |
 | Find available tags | `git tag -l` or GitHub → Code → Tags |
 
 ## Deviations from the Golden Path
@@ -202,5 +246,5 @@ This repository differs from the [Entur Golden Path](https://github.com/entur/ai
 
 | Deviation | Golden Path | Reason |
 |---|---|---|
-| `deploy.yml` tags the repository and supports rollback with a tag. | The image tag from the PR build is used for promotion. | No image is built here, so the repository tag identifies the deployed config and image. |
+| `deploy-serving-pods.yml` tags the repository and supports rollback with a tag. | The image tag from the PR build is used for promotion. | No image is built here, so the repository tag identifies the deployed config and image. |
 | `terraform.yml` applies dev after merge, not on the PR. | Apply dev on the PR. Apply tst and prd after merge. | Dev is the only environment. Changes are applied only after review and merge. Use the Golden Path flow when tst and prd exist. |

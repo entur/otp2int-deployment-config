@@ -57,7 +57,6 @@ jobs:
           gcp_cluster_name: kub-ent-jp-dev-001
           gcp_cluster_location: europe-west4
       - name: Create job from CronJob template
-        id: create-job
         run: |
           set -euo pipefail
           kubectl create job "${JOB_NAME}" \
@@ -65,7 +64,6 @@ jobs:
             -n otp2int
           graph_builder_image=$(kubectl get job "${JOB_NAME}" -n otp2int \
             -o jsonpath="{.spec.template.spec.containers[?(@.name==\"${CRONJOB_NAME}\")].image}")
-          echo "graph_builder_image=${graph_builder_image}" >> "$GITHUB_OUTPUT"
           cat >> "$GITHUB_STEP_SUMMARY" << EOF
           Created job: ${JOB_NAME}
           Graph builder image: \`${graph_builder_image}\`
@@ -110,18 +108,6 @@ jobs:
             echo "Job ${JOB_NAME} is still running"
             sleep 60
           done
-
-      # deploy.yml reads this annotation. It stops a deploy of a serving image that has no graph built with that image.
-      # The transit graph build loads the street graph from the base graph build. Thus its success means that both graphs exist.
-      - name: Record the image of the graph build
-        if: ${{ inputs.cronjob == 'graph-builder-otp2int' }}
-        env:
-          GRAPH_BUILDER_IMAGE: ${{ steps.create-job.outputs.graph_builder_image }}
-        run: |
-          set -euo pipefail
-          kubectl annotate cronjob/graph-builder-otp2int -n otp2int \
-            entur.io/graph-built-with-image="${GRAPH_BUILDER_IMAGE}" --overwrite
-          echo "Graphs built with: \`${GRAPH_BUILDER_IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
 
       # Only the street+transit graph is served by the deployment. The base graph is input to the next build.
       - name: Rolling restart of otp2int to load the new graph
